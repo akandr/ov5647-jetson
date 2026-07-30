@@ -1,0 +1,280 @@
+/dts-v1/;
+/plugin/;
+
+/*
+ * SPDX-License-Identifier: GPL-2.0
+ *
+ * Copyright (C) 2026 Artur Andrzejczak <andrzejczak.artur@gmail.com>
+ * Copyright (c) 2018-2019, NVIDIA CORPORATION
+ *
+ * Camera graph structure and mode-property schema follow NVIDIA's
+ * tegra210-camera-rbpcv2-imx219.dtsi (GPL-2.0); sensor timing values
+ * derived from the mainline ov5647.c mode definitions.
+ *
+ * Device-tree overlay: OV5647 (Raspberry Pi Camera v1) on Jetson Nano 2GB
+ * (P3448-0003 + P3542). Applies onto the stock L4T 32.7.x DTB, which ships
+ * with __symbols__, so it can be merged offline with fdtoverlay:
+ *
+ *   fdtoverlay -i tegra210-p3448-0003-p3542-0000.dtb \
+ *              -o tegra210-p3448-0003-p3542-0000-ov5647.dtb ov5647.dtbo
+ *
+ * What it does:
+ *  - disables the stock IMX219 sensor node
+ *  - adds the OV5647 node on cam i2c (bus 6, addr 0x36), PWDN on gpio 151
+ *  - rewires the NVCSI channel 0 input endpoint to the OV5647
+ *  - repoints tegra-camera-platform module0 at the new sensor
+ */
+
+/ {
+	overlay-name = "Camera OV5647 (Pi Camera v1)";
+	compatible = "nvidia,p3542-0000+p3448-0003";
+
+	/* stock IMX219 out of the way */
+	fragment@0 {
+		target = <&imx219_single_cam0>;
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+
+	/* sensor node on cam i2c (i2c@546c0000, linux bus 6) */
+	fragment@1 {
+		target = <&i2c7>;
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			rbpcv1_ov5647_a@36 {
+				compatible = "nvidia,ov5647";
+				reg = <0x36>;
+
+				devnode = "video0";
+
+				/* pixel array: 2592 x 1944 at 1.4 um */
+				physical_w = "3.629";
+				physical_h = "2.722";
+
+				sensor_model = "ov5647";
+				use_sensor_mode_id = "true";
+
+				/* CAM0_PWDN, drives the module's power enable */
+				reset-gpios = <&gpio 151 0>;
+
+				mode0 { /* OV5647_MODE_2592x1944_15FPS */
+					mclk_khz = "25000";
+					num_lanes = "2";
+					tegra_sinterface = "serial_a";
+					phy_mode = "DPHY";
+					discontinuous_clk = "no";
+					dpcm_enable = "false";
+					cil_settletime = "0";
+
+					active_w = "2592";
+					active_h = "1944";
+					pixel_t = "bayer_bggr";
+					readout_orientation = "0";
+					line_length = "2844";
+					inherent_gain = "1";
+					mclk_multiplier = "3.50";
+					pix_clk_hz = "87500000";
+
+					gain_factor = "16";
+					framerate_factor = "1000000";
+					exposure_factor = "1000000";
+					min_gain_val = "16";
+					max_gain_val = "1023";
+					step_gain_val = "1";
+					default_gain = "16";
+					min_hdr_ratio = "1";
+					max_hdr_ratio = "1";
+					min_framerate = "2000000";
+					max_framerate = "15000000";
+					step_framerate = "1";
+					default_framerate = "15000000";
+					min_exp_time = "131";
+					max_exp_time = "500000";
+					step_exp_time = "1";
+					default_exp_time = "16666";
+
+					embedded_metadata_height = "0";
+				};
+				mode1 { /* OV5647_MODE_1920x1080_30FPS */
+					mclk_khz = "25000";
+					num_lanes = "2";
+					tegra_sinterface = "serial_a";
+					phy_mode = "DPHY";
+					discontinuous_clk = "no";
+					dpcm_enable = "false";
+					cil_settletime = "0";
+
+					active_w = "1920";
+					active_h = "1080";
+					pixel_t = "bayer_bggr";
+					readout_orientation = "0";
+					line_length = "2416";
+					inherent_gain = "1";
+					mclk_multiplier = "3.27";
+					pix_clk_hz = "81666700";
+
+					gain_factor = "16";
+					framerate_factor = "1000000";
+					exposure_factor = "1000000";
+					min_gain_val = "16";
+					max_gain_val = "1023";
+					step_gain_val = "1";
+					default_gain = "16";
+					min_hdr_ratio = "1";
+					max_hdr_ratio = "1";
+					min_framerate = "2000000";
+					max_framerate = "30000000";
+					step_framerate = "1";
+					default_framerate = "30000000";
+					min_exp_time = "119";
+					max_exp_time = "500000";
+					step_exp_time = "1";
+					default_exp_time = "16666";
+
+					embedded_metadata_height = "0";
+				};
+				mode2 { /* OV5647_MODE_1296x972_30FPS */
+					mclk_khz = "25000";
+					num_lanes = "2";
+					tegra_sinterface = "serial_a";
+					phy_mode = "DPHY";
+					discontinuous_clk = "no";
+					dpcm_enable = "false";
+					cil_settletime = "0";
+
+					active_w = "1296";
+					active_h = "972";
+					pixel_t = "bayer_bggr";
+					readout_orientation = "0";
+					line_length = "1896";
+					inherent_gain = "1";
+					mclk_multiplier = "3.27";
+					pix_clk_hz = "81666700";
+
+					gain_factor = "16";
+					framerate_factor = "1000000";
+					exposure_factor = "1000000";
+					min_gain_val = "16";
+					max_gain_val = "1023";
+					step_gain_val = "1";
+					default_gain = "16";
+					min_hdr_ratio = "1";
+					max_hdr_ratio = "1";
+					min_framerate = "2000000";
+					max_framerate = "30000000";
+					step_framerate = "1";
+					default_framerate = "30000000";
+					min_exp_time = "93";
+					max_exp_time = "500000";
+					step_exp_time = "1";
+					default_exp_time = "16666";
+
+					embedded_metadata_height = "0";
+				};
+				mode3 { /* OV5647_MODE_640x480_62FPS */
+					mclk_khz = "25000";
+					num_lanes = "2";
+					tegra_sinterface = "serial_a";
+					phy_mode = "DPHY";
+					discontinuous_clk = "no";
+					dpcm_enable = "false";
+					cil_settletime = "0";
+
+					active_w = "640";
+					active_h = "480";
+					pixel_t = "bayer_bggr";
+					readout_orientation = "0";
+					line_length = "1852";
+					inherent_gain = "1";
+					mclk_multiplier = "2.33";
+					pix_clk_hz = "58333300";
+
+					gain_factor = "16";
+					framerate_factor = "1000000";
+					exposure_factor = "1000000";
+					min_gain_val = "16";
+					max_gain_val = "1023";
+					step_gain_val = "1";
+					default_gain = "16";
+					min_hdr_ratio = "1";
+					max_hdr_ratio = "1";
+					min_framerate = "2000000";
+					max_framerate = "62000000";
+					step_framerate = "1";
+					default_framerate = "62000000";
+					min_exp_time = "127";
+					max_exp_time = "500000";
+					step_exp_time = "1";
+					default_exp_time = "16666";
+
+					embedded_metadata_height = "0";
+				};
+
+				ports {
+					#address-cells = <1>;
+					#size-cells = <0>;
+
+					port@0 {
+						reg = <0>;
+						rbpcv1_ov5647_out0: endpoint {
+							port-index = <0>;
+							bus-width = <2>;
+							remote-endpoint =
+								<&rbpcv2_imx219_csi_in0>;
+						};
+					};
+				};
+			};
+		};
+	};
+
+	/* point NVCSI channel 0 input at the OV5647 */
+	fragment@2 {
+		target = <&rbpcv2_imx219_csi_in0>;
+		__overlay__ {
+			remote-endpoint = <&rbpcv1_ov5647_out0>;
+		};
+	};
+
+	/* tegra-camera-platform: rebadge module0 for the new sensor */
+	fragment@3 {
+		target = <&cam_module0>;
+		__overlay__ {
+			badge = "porg_front_RBPCV1";
+		};
+	};
+
+	fragment@4 {
+		target = <&cam_module0_drivernode0>;
+		__overlay__ {
+			devname = "ov5647 6-0036";
+			proc-device-tree =
+				"/proc/device-tree/host1x/i2c@546c0000/rbpcv1_ov5647_a@36";
+		};
+	};
+
+	/* fixed-focus Pi Camera v1 lens, reported by Argus */
+	fragment@5 {
+		target-path = "/";
+		__overlay__ {
+			lens_ov5647@RBPCV1 {
+				min_focus_distance = "0.0";
+				hyper_focal = "0.0";
+				focal_length = "3.60";
+				f_number = "2.9";
+				aperture = "0.0";
+			};
+		};
+	};
+
+	fragment@6 {
+		target = <&cam_module0_drivernode1>;
+		__overlay__ {
+			proc-device-tree =
+				"/proc/device-tree/lens_ov5647@RBPCV1/";
+		};
+	};
+};
