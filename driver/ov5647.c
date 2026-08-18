@@ -21,6 +21,7 @@
  *     driver by Ramiro Oliveira
  */
 
+#include <linux/bitfield.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 #include <linux/gpio.h>
@@ -55,6 +56,16 @@
 #define OV5647_REG_GAIN_LO		0x350b
 #define OV5647_REG_VTS_HI		0x380e
 #define OV5647_REG_VTS_LO		0x380f
+#define OV5647_REG_GROUP_ACCESS		0x3208
+#define OV5647_GROUP_CTRL		GENMASK(7, 4)
+#define OV5647_GROUP_CTRL_ENTER		0x0
+#define OV5647_GROUP_CTRL_EXIT		0x1
+#define OV5647_GROUP_CTRL_LAUNCH	0xa
+#define OV5647_GROUP_ID			GENMASK(3, 0)
+/* One group is enough: the sensor buffers 16 registers per group and a
+ * control update writes at most seven (exposure 3, gain 2, VTS 2).
+ */
+#define OV5647_CTRL_GROUP		0
 
 /* Nominal VTS (frame length in lines) per sensor mode, from the mainline
  * mode definitions; the register sequences leave VTS at its reset default,
@@ -146,12 +157,31 @@ static int ov5647_write_table(struct ov5647 *priv, const ov5647_reg table[])
 		OV5647_TABLE_WAIT_MS, OV5647_TABLE_END);
 }
 
+static int ov5647_group_access(struct camera_common_data *s_data, u8 ctrl)
+{
+	return ov5647_write_reg(s_data, OV5647_REG_GROUP_ACCESS,
+				FIELD_PREP(OV5647_GROUP_CTRL, ctrl) |
+				FIELD_PREP(OV5647_GROUP_ID, OV5647_CTRL_GROUP));
+}
+
+/* Without this, a multi-register control update applies byte by byte and can
+ * straddle a frame boundary, exposing one frame with a mixed value. Held
+ * writes go to the group's SRAM instead and reach the sensor together when
+ * the group is launched.
+ */
 static int ov5647_set_group_hold(struct tegracam_device *tc_dev, bool val)
 {
-	/* Group hold is not implemented: the sensor applies each register
-	 * write as it arrives, so a multi-register control update can
-	 * straddle a frame boundary. See the README's known limitations. */
-	return 0;
+	struct camera_common_data *s_data = tc_dev->s_data;
+	int err;
+
+	if (val)
+		return ov5647_group_access(s_data, OV5647_GROUP_CTRL_ENTER);
+
+	err = ov5647_group_access(s_data, OV5647_GROUP_CTRL_EXIT);
+	if (err)
+		return err;
+
+	return ov5647_group_access(s_data, OV5647_GROUP_CTRL_LAUNCH);
 }
 
 static int ov5647_set_gain(struct tegracam_device *tc_dev, s64 val)

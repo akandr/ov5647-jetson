@@ -287,10 +287,11 @@ once:
   (pixel clock / line length / frame length). The frame-rate control
   reaches a requested rate to within one line time, since frame length
   is programmed in whole lines.
-- Group hold is not implemented. Exposure is three byte writes, so a
-  control update can land across a frame boundary and expose one frame
-  with a mixed value. Argus and steady-state capture do not show it;
-  a test that steps exposure every frame would.
+- Group hold uses one of the sensor's four register groups, so an
+  exposure update (three byte writes) reaches the sensor whole instead
+  of straddling a frame boundary. Verified by reading 0x3500-0x3502 off
+  the I2C bus while streaming: writes made under the hold do not appear
+  until the group is launched, and the image only changes then.
 - Orin support is build- and overlay-verified but has not yet seen a
   camera (15-to-22-pin adapter ribbon required).
 - Nano 4GB (P3448-0000) should work but its overlay symbols are
