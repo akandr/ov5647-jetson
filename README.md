@@ -1,0 +1,340 @@
+# OV5647 (Raspberry Pi Camera v1) driver for NVIDIA Jetson
+
+ISP-integrated driver for the OmniVision OV5647 sensor (Raspberry Pi
+Camera Module v1) on NVIDIA Jetson boards. One driver source builds on
+L4T R32, R35 and JetPack 7 (kernels 4.9, 5.10, 6.8); the installer
+detects the board. The sensor reaches the NVIDIA camera stack, not
+just raw frames: hardware ISP (AE, AWB, debayer) via
+`nvarguscamerasrc` and zero-copy NVMM buffers in three of the four
+modes, plus plain V4L2 raw Bayer capture in all of them.
+
+First light, raw path: a 2592x1944 Bayer frame captured through the
+driver with V4L2, then debayered in software (2x2 Bayer quads to one
+pixel each, hence the half-resolution image):
+
+![First light: raw Bayer capture through the driver, software debayer](docs/first_light.png)
+
+The same sensor through the full hardware pipeline at 1296x972: ISP
+debayer, auto exposure and white balance, JPEG-encoded on the Jetson.
+Colors are not tuned yet (see Known limitations), which is why the
+image pulls magenta:
+
+![ISP capture: nvarguscamerasrc to nvjpegenc on the Jetson Nano](docs/isp_capture.jpg)
+
+## Why this exists
+
+The Pi Camera v1 carries the OV5647. Jetson's stock JetPack ships
+drivers for the IMX219 (Pi Camera v2) and IMX477 (HQ), not for this
+sensor, so the camera and the board do not work together out of the
+box on any L4T release.
+
+There is no maintained open-source answer. RidgeRun sells a closed
+driver, last documented for L4T 32.1. A 2019 alpha by jas-hacks
+shipped prebuilt binaries for L4T 32.2 and was never maintained. The
+rest are unmaintained, incomplete, or stop at raw V4L2 capture
+without ISP integration. The ISP is the part worth having: hardware
+debayer, auto exposure, auto white balance, and DMA straight into
+NVMM buffers that CUDA and the encoders consume without a copy. The
+survey, with what each project did and did not do, is in
+[docs/prior-art.md](docs/prior-art.md).
+
+## Support matrix
+
+| Board | L4T | Status |
+|---|---|---|
+| Jetson Nano 2GB (P3448-0003) | R32.7.6 / JetPack 4.6.6 | working, verified on hardware |
+| Jetson Nano 4GB (P3448-0000) | R32.7.x | untested, overlay symbols need checking |
+| Jetson Xavier NX devkit (P3668) | R35.x / JetPack 5 | working, verified on hardware |
+| Jetson Orin Nano/NX devkit (P3767) | JetPack 7 / L4T r39 | installer runs, board boots the merged DTB and the sensor node comes up on I2C; with no camera attached the probe stops at the chip-ID read |
+
+## Status
+
+- [x] Chip detection over I2C (addr 0x36, ID 0x5647)
+- [x] tegracam probe and bind on hardware
+- [x] Modes: 2592x1944, 1920x1080, 1296x972, 640x480
+      (nominal 15, 30, 30, 62 fps; see Known limitations for the
+      exact rates the timings produce)
+- [x] Raw V4L2 Bayer capture, all four modes
+- [x] Hardware ISP via `nvarguscamerasrc` for every mode except
+      2592x1944 (raw-only, see Known limitations); a 900-frame 1080p
+      run reports no dropped buffers
+- [x] Builds on R32 (4.9), R35 (5.10), JetPack 7 / r39 (6.8); each
+      board boots its merged DTB and probes the sensor node. The 4.9
+      and 5.10 boards are verified with a camera attached; on the 6.8
+      board the probe stops at the I2C read, for want of a camera.
+- [x] Camera-attached test on Xavier NX: all four modes raw, ISP on
+      all but full-res, same driver and overlay as committed
+- [ ] Camera-attached test on Orin (needs a 15-to-22-pin adapter ribbon)
+- [ ] ISP color tuning file (camera_overrides.isp)
+- [ ] 2560x1920 crop mode, to try to get near-full resolution through
+      the ISP
+- [ ] Prebuilt release artifacts (.ko, .dtbo, installer)
+
+## How the capture path works
+
+The Pi Camera v1 is a 5 MP rolling-shutter sensor speaking 2-lane MIPI
+CSI-2, 10-bit Bayer (BGGR). The module carries its own 25 MHz
+oscillator and gates its power regulators with the ribbon's enable pin,
+so the driver needs no clock or regulator plumbing, only one GPIO:
+until that pin is high the sensor does not even ACK on I2C.
+
+On the Jetson side the frame takes this path:
+
+    OV5647 --2-lane CSI--> NVCSI --> VI --DMA--> system memory --> /dev/video0
+
+NVCSI is the CSI-2 receiver brick, VI (video input) DMA-writes the
+raw Bayer frames to memory. That is the V4L2 path: the pixels are the
+sensor's own, with no debayer or correction applied, though VI pads
+each line to a 64-byte boundary on the way out (see Bring-up notes).
+
+The interesting path goes through the ISP instead:
+
+    OV5647 --> NVCSI --> VI --> ISP (debayer, AE, AWB) --> NVMM buffers
+
+`nvargus-daemon` owns that pipeline. It runs the exposure and white
+balance loops by calling the same driver controls a V4L2 user would
+(gain, exposure, frame rate), and hands out finished RGB/YUV frames in
+NVMM buffers that `nvarguscamerasrc`, the hardware encoders and CUDA
+consume zero-copy.
+
+The driver itself is a tegracam driver. tegracam is NVIDIA's kernel
+framework for camera sensors: the driver supplies a table of modes and
+a handful of ops (power on/off, set mode, start/stop streaming, set
+gain/exposure/frame rate), and the framework builds the V4L2 subdevice,
+the media controller graph and the control plumbing around it. The
+mode list lives twice by design: register tables in the driver, timing
+properties in the device tree, and the two must agree (see Bring-up
+notes).
+
+What it looks like on a running Nano:
+
+    $ dmesg | grep ov5647
+    [    3.908647] ov5647 6-0036: tegracam sensor driver:ov5647_v2.0.6
+    [    3.939281] ov5647 6-0036: OV5647 detected (chip id 0x5647)
+    [    3.939355] vi 54080000.vi: subdev ov5647 6-0036 bound
+    [    3.940301] ov5647 6-0036: detected ov5647 sensor
+
+    $ media-ctl -p -d /dev/media0
+    - entity 1: nvcsi--1 (2 pads, 2 links)
+                type V4L2 subdev subtype Unknown flags 0
+                device node name /dev/v4l-subdev0
+        pad0: Sink
+            <- "ov5647 6-0036":0 [ENABLED]
+        pad1: Source
+            -> "vi-output, ov5647 6-0036":0 [ENABLED]
+
+    - entity 4: ov5647 6-0036 (1 pad, 1 link)
+                type V4L2 subdev subtype Sensor flags 0
+                device node name /dev/v4l-subdev1
+        pad0: Source
+            [fmt:SBGGR10_1X10/2592x1944 field:none colorspace:srgb]
+            -> "nvcsi--1":0 [ENABLED]
+
+    - entity 6: vi-output, ov5647 6-0036 (1 pad, 1 link)
+                type Node subtype V4L flags 0
+                device node name /dev/video0
+        pad0: Sink
+            <- "nvcsi--1":1 [ENABLED]
+
+## The device tree overlays
+
+Nothing in this project reflashes a board. Each board gets a device
+tree overlay, merged with `fdtoverlay` into a new DTB that is selected
+with one `FDT` line in `extlinux.conf`. The stock DTBs stay untouched
+and the installer keeps a copy of the base it merged, so re-running it
+never stacks the overlay on top of itself. Reverting means restoring
+the backed-up `extlinux.conf` and deleting what the installer wrote:
+the module and its files under `/boot`. The installer prints the exact
+commands.
+
+Where the base DTB comes from differs by board. On Nano and Xavier NX
+it is a file in `/boot`, named by `extlinux.conf` when the board
+already has an `FDT` line. JetPack 7 hands the DTB over from UEFI and
+extlinux names no file, so the first install merges onto
+`/sys/firmware/fdt`, the live tree, which is the only copy of it the
+running system has; later runs merge onto the snapshot that first
+install kept, because by then the live tree is the merged one.
+
+The overlay is where the boards differ, and they fall into two
+groups:
+
+- Nano (R32) and Xavier NX (R35) ship DTBs that already contain the
+  complete camera graph, wired for the stock IMX219. The overlay swaps
+  the sensor: it disables the IMX219 node, adds the OV5647 on the
+  camera I2C bus, repoints the NVCSI input endpoint and rebadges the
+  `tegra-camera-platform` entry. The sensor node with its four mode
+  descriptions is the bulk of the file; the rewiring itself is a
+  handful of lines.
+- JetPack 7 (Orin) ships a DTB with the SoC blocks present but nothing
+  wired: `tegra-capture-vi` and the NVCSI controller carry no ports or
+  channels, and there is no sensor, no camera I2C mux and no
+  `tegra-camera-platform`. The overlay supplies all of it, extending
+  three existing nodes by path (`tegra-capture-vi`, the NVCSI
+  controller and the main GPIO node) and adding the rest, with three
+  phandle references into the base tree (`&gpio`, `&gpio_aon`,
+  `&cam_i2c`). NVIDIA's own IMX219 overlay for this carrier
+  declares swapped CSI lane polarity (`lane_polarity = "6"`), so this
+  overlay carries it too; that part is inherited rather than measured,
+  since no camera has been on this board yet.
+
+Each mode node in the overlay repeats the timing its register table
+programs (line length and pixel clock), because the framework computes
+exposure and frame-rate register values from the device tree numbers,
+not from the driver. Frame length is the exception: it lives only in
+the driver, which writes each mode's nominal value in `set_mode`.
+
+## Install
+
+The camera goes in the CAM0 connector. The overlays wire that port
+only, so a camera on CAM1 produces no frames. Orin devkits have 22-pin
+connectors and need a 15-to-22-pin adapter ribbon.
+
+On the board:
+
+    git clone https://github.com/akandr/ov5647-jetson && cd ov5647-jetson
+    sudo ./install.sh
+    sudo reboot
+
+The installer detects the board, installs the packages it builds with
+(`device-tree-compiler` and the L4T kernel headers, plus the
+out-of-tree headers on JetPack 7), builds the module against the
+installed kernel headers, merges the board's overlay onto the DTB that
+board boots (see The device tree overlays) and points the extlinux
+`FDT` entry of the boot entry `DEFAULT` names at the merged copy. The
+original `extlinux.conf` is backed up as `extlinux.conf.orig`, and the
+revert commands are printed at the end of a successful run: restore
+that backup, delete the module from `/lib/modules/$(uname -r)/updates`
+and the files the installer wrote under `/boot`, then `depmod -a` and
+reboot.
+
+Then:
+
+    # ISP path, 1080p30 through hardware debayer/AE/AWB
+    gst-launch-1.0 nvarguscamerasrc ! 'video/x-raw(memory:NVMM),width=1920,height=1080' ! fakesink
+
+    # raw Bayer path
+    v4l2-ctl -d /dev/video0 --set-ctrl=sensor_mode=1 \
+             --set-fmt-video=width=1920,height=1080,pixelformat=BG10 \
+             --stream-mmap --stream-count=30 --stream-to=frames.raw
+
+The overlay sets `use_sensor_mode_id`, so the mode comes from the
+`sensor_mode` control rather than from resolution matching. The
+requested format still has to match that mode's resolution: ask for a
+size the selected mode does not produce and the driver falls back to
+its default mode, silently handing you full-resolution frames.
+
+## Bring-up notes
+
+Things that cost real debugging time, kept here so they cost it only
+once:
+
+- T210 (Nano) rejects every frame of this sensor with the mainline
+  register tables. The mainline tables program a gated MIPI clock; the
+  Nano's VI then counts frames at the right cadence but rejects each
+  one with `tegra_channel_error_status: error 20022` and delivers zero
+  bytes. The fix is a continuous clock on both sides: `0x4800 = 0x04`
+  in every mode table and `discontinuous_clk = "no"` in the DT. It is
+  one of only two registers in which these tables differ from
+  mainline's.
+- The failure signature tells you where to look. Frames counted but
+  rejected: link integrity, check clocking. No frames at all: check
+  mode timings and lanes, or (voice of experience) the ribbon. Short
+  frame errors: geometry mismatch between table and DT.
+- The device tree's `pix_clk_hz` has to match the pixel clock the
+  mode's PLL registers actually produce, because the framework derives
+  exposure and frame-rate values from the device tree number, not from
+  the sensor. Getting it wrong is silent: the VGA mode declared
+  55 MHz against a table whose PLL gives 58.33 MHz, so it ran 6% fast
+  with exposure off by the same factor. Nothing reports this; it
+  surfaced only when the rate was measured (a 400-frame capture timed
+  against a 100-frame one, to cancel start-up cost) and compared with
+  the declared value.
+- The mainline tables do not program VTS (frame length); mainline
+  drives it through the vblank control at runtime. Left alone the
+  sensor free-runs at its reset default, 17 fps instead of 30 for
+  1080p. The driver writes the mode's nominal VTS explicitly.
+- The ISP rejects the 2592-wide full-resolution mode at stream start
+  (`NVMAP_IOC_READ failed [22]` in the daemon log) while the other
+  three modes stream fine. The V4L2 path takes the same mode without
+  complaint, so the sensor and the CSI link are not at fault. The
+  constraint the ISP is enforcing has not been identified; the planned
+  fix is a 2560x1920 crop mode, which sidesteps the question and is
+  worth trying before spending more time on the daemon's internals.
+- The order of `frmfmt[]` in the driver must mirror the `modeN` nodes
+  in the DT. The index is used to look up control properties, so a
+  mismatch silently computes exposure with another mode's line length.
+- JetPack 7 ships the tegracam headers in `/usr/src/nvidia` but not
+  the generated `nvidia/conftest.h` they include, and one of those
+  macros gates a field inside `struct camera_common_data`. Guess it
+  wrong and the struct layout disagrees with the precompiled
+  `tegra-camera.ko`. `driver/compat/` carries a substitute with each
+  value checked against the running kernel.
+- VI pads the line stride to 64 bytes: the 1296-wide mode yields
+  2624-byte lines in raw dumps.
+- Debug Argus through `journalctl -u nvargus-daemon`, not the GStreamer
+  client; the client only ever says "Internal data stream error".
+
+## Known limitations
+
+- Colors are untuned. Without a badge-matched `camera_overrides.isp`
+  the ISP runs generic tuning; images look washed out and pull
+  magenta, as the capture above shows. AE and AWB loops work. A tuning
+  file is a separate work item.
+- The 2592x1944 mode is raw-only; the ISP rejects it for reasons
+  not yet identified (see Bring-up notes).
+- The advertised frame rates are rounded down from what the mode
+  timings produce: 15.6, 30.6, 30.0 and 62.5 fps
+  (pixel clock / line length / frame length). The frame-rate control
+  reaches a requested rate to within one line time, since frame length
+  is programmed in whole lines.
+- Group hold is not implemented. Exposure is three byte writes, so a
+  control update can land across a frame boundary and expose one frame
+  with a mixed value. Argus and steady-state capture do not show it;
+  a test that steps exposure every frame would.
+- Orin support is build- and overlay-verified but has not yet seen a
+  camera (15-to-22-pin adapter ribbon required).
+- Nano 4GB (P3448-0000) should work but its overlay symbols are
+  unverified; the installer rejects it rather than guess.
+
+## Layout
+
+    driver/     kernel module, tegracam framework, shared across boards;
+                compat/ substitutes NVIDIA's generated conftest.h on JetPack 7
+    dt/nano/    DT overlay, Jetson Nano 2GB (L4T R32)
+    dt/xavier/  DT overlay, Xavier NX devkit (L4T R35)
+    dt/orin/    DT overlay, Orin Nano/NX devkit (JetPack 7)
+    docs/       prior art survey, first-light and ISP captures
+
+## Provenance and licensing
+
+GPL-2.0. The code here comes from public GPL-2.0 sources plus the
+Tegra-specific work described in the bring-up notes: the sensor
+register sequences and their per-mode HTS/VTS start from the mainline
+Linux `drivers/media/i2c/ov5647.c` (Copyright (C) 2016, Synopsys, Inc.,
+driver by Ramiro Oliveira), and the driver structure and overlay
+schemas follow NVIDIA's public L4T kernel sources and device trees (the
+tegracam framework, the IMX219 reference driver, the per-board camera
+DTs).
+
+The register tables are mainline's. Compared register by register
+against v6.1, all four differ in exactly two places: `0x4800`, set to
+a continuous MIPI clock for Tegra (see Bring-up notes), and the
+trailing `0x0100`, dropped because streaming is driven from separate
+start and stop tables. Each table also carries a 10 ms wait after the
+soft reset, which is a tegracam table entry rather than a register.
+Everything else, including the duplicate writes mainline's own tables
+carry, is byte for byte upstream.
+
+What is this port's own is the Tegra integration: the tegracam driver,
+VTS programming, the control conversions, the multi-kernel build, the
+installer, and in the overlays the wiring each board needs (CSI
+interface, lane polarity, GPIO and I2C mux) plus mainline's timings
+restated in tegracam's mode-property form. The overlays' graph
+structure, sensor-node layout and that property schema follow NVIDIA's
+IMX219 overlays, as each overlay header says.
+
+No proprietary, NDA-covered or employer-derived material is included.
+Upstream copyright notices are preserved in the file headers.
+
+Artur Andrzejczak <andrzejczak.artur@gmail.com>.
+Developed with AI assistance, see commit trailers.
