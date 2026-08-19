@@ -270,7 +270,28 @@ once:
   `tegra-camera.ko`. `driver/compat/` carries a substitute with each
   value checked against the running kernel.
 - VI pads the line stride to 64 bytes: the 1296-wide mode yields
-  2624-byte lines in raw dumps.
+  2624-byte lines in raw dumps on R32. R35 leaves the same mode at
+  2592-byte lines, so read the stride from the format rather than
+  assuming it.
+- The driver exposes registers under
+  `/sys/kernel/debug/ov5647-<i2c-addr>/`. `regs` dumps the ranges that
+  matter (system, AEC/AGC, timing, MIPI, ISP); `reg` takes `<addr>` to
+  select a register and `<addr> <value>` to write one, both hex, and
+  reads back the selected one. Reads bypass the regmap cache, so what
+  comes out is what the sensor holds. The sensor answers over I2C only
+  while powered, which is during capture, so both files say so instead
+  of touching a powered-down bus:
+
+      # while a capture is running
+      echo 0x300a > /sys/kernel/debug/ov5647-6-0036/reg
+      cat /sys/kernel/debug/ov5647-6-0036/reg      # 0x300a 0x56
+
+  This is also the way to reach registers the driver does not drive.
+  Writing `0x503d 0x80` turns on the sensor's colour-bar test pattern,
+  which exercises CSI, VI and the capture path with no light and no
+  lens: on a dark bench the frame mean goes from 13 to 511 and the
+  column variance from 1 to 359. Set it back to `0x00`, or restart the
+  stream, since the mode tables reset it.
 - Debug Argus through `journalctl -u nvargus-daemon`, not the GStreamer
   client; the client only ever says "Internal data stream error".
 

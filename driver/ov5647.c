@@ -22,6 +22,8 @@
  */
 
 #include <linux/bitfield.h>
+#include <linux/debugfs.h>
+#include <linux/mutex.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 #include <linux/gpio.h>
@@ -106,6 +108,28 @@ struct ov5647 {
 	bool				pwdn_gpio_owned;
 	struct camera_common_data	*s_data;
 	struct tegracam_device		*tc_dev;
+	struct dentry			*debugfs_dir;
+	struct mutex			debugfs_lock;
+	u16				debugfs_addr;
+};
+
+/* Register ranges worth dumping, named after what they drive. Reading the
+ * whole 0x0000-0xffff space would be thousands of I2C transfers for pages
+ * the sensor does not implement.
+ */
+static const struct ov5647_reg_bank {
+	u16		first;
+	u16		last;
+	const char	*name;
+} ov5647_reg_banks[] = {
+	{ 0x3000, 0x3040, "system and clocks" },
+	{ 0x3200, 0x320c, "group access" },
+	{ 0x3500, 0x350c, "AEC and AGC" },
+	{ 0x3800, 0x3821, "timing and windowing" },
+	{ 0x4000, 0x4010, "black level" },
+	{ 0x4800, 0x4837, "MIPI" },
+	{ 0x5000, 0x5003, "ISP control" },
+	{ 0x503d, 0x503e, "test pattern" },
 };
 
 /* Probe-time handoff: set by power_get (which the framework calls before
@@ -169,6 +193,177 @@ static int ov5647_group_access(struct camera_common_data *s_data, u8 ctrl)
  * writes go to the group's SRAM instead and reach the sensor together when
  * the group is launched.
  */
+/* Register access from userspace. The sensor only answers over I2C while it
+ * is powered, which tegracam does around streaming, so every entry point
+ * checks that first: poking a powered-down sensor wedges the I2C bus rather
+ * than returning an error. Reads bypass the regmap cache, since the point of
+ * looking is to see what the sensor actually holds.
+ */
+static int ov5647_dbg_read(struct ov5647 *priv, u16 addr, u8 *val)
+{
+	struct camera_common_data *s_data = priv->s_data;
+	int err;
+
+	if (s_data->power->state != SWITCH_ON)
+		return -ENODEV;
+
+	regcache_cache_bypass(s_data->regmap, true);
+	err = ov5647_read_reg(s_data, addr, val);
+	regcache_cache_bypass(s_data->regmap, false);
+
+	return err;
+}
+
+static int ov5647_dbg_regs_show(struct seq_file *s, void *unused)
+{
+	struct ov5647 *priv = s->private;
+	unsigned int i;
+	u16 addr;
+	u8 val;
+	int err;
+
+	mutex_lock(&priv->debugfs_lock);
+
+	if (priv->s_data->power->state != SWITCH_ON) {
+		seq_puts(s, "sensor is powered off, start a capture first\n");
+		mutex_unlock(&priv->debugfs_lock);
+		return 0;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(ov5647_reg_banks); i++) {
+		seq_printf(s, "# %s\n", ov5647_reg_banks[i].name);
+		for (addr = ov5647_reg_banks[i].first;
+		     addr <= ov5647_reg_banks[i].last; addr++) {
+			err = ov5647_dbg_read(priv, addr, &val);
+			if (err) {
+				seq_printf(s, "0x%04x read failed (%d)\n",
+					   addr, err);
+				break;
+			}
+			seq_printf(s, "0x%04x 0x%02x\n", addr, val);
+		}
+	}
+
+	mutex_unlock(&priv->debugfs_lock);
+
+	return 0;
+}
+
+static int ov5647_dbg_regs_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, ov5647_dbg_regs_show, inode->i_private);
+}
+
+static const struct file_operations ov5647_dbg_regs_fops = {
+	.owner		= THIS_MODULE,
+	.open		= ov5647_dbg_regs_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+/* Reading gives the selected register, writing takes "<addr>" to select one
+ * or "<addr> <value>" to set it, both hex.
+ */
+static int ov5647_dbg_reg_show(struct seq_file *s, void *unused)
+{
+	struct ov5647 *priv = s->private;
+	u8 val;
+	int err;
+
+	mutex_lock(&priv->debugfs_lock);
+	err = ov5647_dbg_read(priv, priv->debugfs_addr, &val);
+	if (!err)
+		seq_printf(s, "0x%04x 0x%02x\n", priv->debugfs_addr, val);
+	else if (err == -ENODEV)
+		seq_puts(s, "sensor is powered off, start a capture first\n");
+	mutex_unlock(&priv->debugfs_lock);
+
+	return err == -ENODEV ? 0 : err;
+}
+
+static int ov5647_dbg_reg_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, ov5647_dbg_reg_show, inode->i_private);
+}
+
+static ssize_t ov5647_dbg_reg_write(struct file *file, const char __user *ubuf,
+				    size_t count, loff_t *ppos)
+{
+	struct ov5647 *priv = ((struct seq_file *)file->private_data)->private;
+	unsigned int addr, val;
+	char buf[32];
+	int fields, err;
+
+	if (count == 0 || count >= sizeof(buf))
+		return -EINVAL;
+	if (copy_from_user(buf, ubuf, count))
+		return -EFAULT;
+	buf[count] = '\0';
+
+	fields = sscanf(buf, "%x %x", &addr, &val);
+	if (fields < 1 || addr > 0xffff)
+		return -EINVAL;
+
+	mutex_lock(&priv->debugfs_lock);
+	priv->debugfs_addr = addr;
+
+	if (fields == 1) {
+		mutex_unlock(&priv->debugfs_lock);
+		return count;
+	}
+
+	if (val > 0xff) {
+		mutex_unlock(&priv->debugfs_lock);
+		return -EINVAL;
+	}
+	if (priv->s_data->power->state != SWITCH_ON) {
+		mutex_unlock(&priv->debugfs_lock);
+		return -ENODEV;
+	}
+
+	err = ov5647_write_reg(priv->s_data, addr, val);
+	mutex_unlock(&priv->debugfs_lock);
+
+	return err ? err : count;
+}
+
+static const struct file_operations ov5647_dbg_reg_fops = {
+	.owner		= THIS_MODULE,
+	.open		= ov5647_dbg_reg_open,
+	.read		= seq_read,
+	.write		= ov5647_dbg_reg_write,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+static void ov5647_debugfs_init(struct ov5647 *priv)
+{
+	char name[32];
+
+	mutex_init(&priv->debugfs_lock);
+	priv->debugfs_addr = OV5647_REG_CHIPID_H;
+
+	snprintf(name, sizeof(name), "ov5647-%s",
+		 dev_name(&priv->i2c_client->dev));
+	priv->debugfs_dir = debugfs_create_dir(name, NULL);
+	if (IS_ERR_OR_NULL(priv->debugfs_dir)) {
+		priv->debugfs_dir = NULL;
+		return;
+	}
+
+	debugfs_create_file("regs", 0400, priv->debugfs_dir, priv,
+			    &ov5647_dbg_regs_fops);
+	debugfs_create_file("reg", 0600, priv->debugfs_dir, priv,
+			    &ov5647_dbg_reg_fops);
+}
+
+static void ov5647_debugfs_remove(struct ov5647 *priv)
+{
+	debugfs_remove_recursive(priv->debugfs_dir);
+	priv->debugfs_dir = NULL;
+}
+
 static int ov5647_set_group_hold(struct tegracam_device *tc_dev, bool val)
 {
 	struct camera_common_data *s_data = tc_dev->s_data;
@@ -680,6 +875,8 @@ static int ov5647_probe(struct i2c_client *client,
 		return err;
 	}
 
+	ov5647_debugfs_init(priv);
+
 	dev_info(dev, "detected ov5647 sensor\n");
 
 	return 0;
@@ -694,6 +891,7 @@ static int ov5647_remove(struct i2c_client *client)
 	struct camera_common_data *s_data = to_camera_common_data(&client->dev);
 	struct ov5647 *priv = (struct ov5647 *)s_data->priv;
 
+	ov5647_debugfs_remove(priv);
 	tegracam_v4l2subdev_unregister(priv->tc_dev);
 	tegracam_device_unregister(priv->tc_dev);
 
