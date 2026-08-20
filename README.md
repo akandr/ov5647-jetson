@@ -223,6 +223,15 @@ requested format still has to match that mode's resolution: ask for a
 size the selected mode does not produce and the driver falls back to
 its default mode, silently handing you full-resolution frames.
 
+`tests/capture-check.sh` runs the whole set: every raw mode and the ISP
+modes. It checks more than the frame count, because a frame count on
+its own proves little here. `v4l2-ctl` keeps streaming in the previous
+format when the one you asked for is rejected, so the script confirms
+the device really accepted the geometry and that the file holds exactly
+the expected number of bytes. It also reports the spread of pixel
+values, which is what separates a working sensor from a covered lens:
+both deliver full frame counts, only one delivers signal.
+
 ## Bring-up notes
 
 Things that cost real debugging time, kept here so they cost it only
