@@ -232,6 +232,44 @@ the expected number of bytes. It also reports the spread of pixel
 values, which is what separates a working sensor from a covered lens:
 both deliver full frame counts, only one delivers signal.
 
+`tests/control-check.sh` covers the other half: whether the controls
+reach the sensor at all. Frames can arrive with perfect geometry while
+exposure, gain and frame rate are ignored, and nothing in a capture test
+would notice. It sweeps exposure and gain against the sensor black level,
+counts delivered frames to check the requested frame rate, and switches
+on the sensor's own bar pattern through the register interface. Exposure
+and gain need a lit scene; with a covered lens the script reports those
+two as inconclusive rather than failed.
+
+Two properties of the framework decide how any such test has to be
+written, and both look like driver bugs when you hit them:
+
+- Controls set before streaming starts do not reach the sensor. The
+  default `override_enable=0` tells the framework not to apply stored
+  values at stream start, so a sweep done that way produces a perfectly
+  flat curve. Either set controls while streaming, as applications do,
+  or set `override_enable=1` first.
+- Every stream start rewrites the frame length from the mode table, so
+  a frame rate set for one stream is gone by the next. Measuring the
+  rate therefore only works within a single continuous stream.
+
+## Control ranges in practice
+
+Exposure is limited by the current frame length, not by the maximum the
+control advertises. At 30 fps the frame is 1435 lines, so exposure stops
+rising at 1427 lines, near 33 ms, whatever value you write; the control
+still accepts up to 500 ms. Lower the frame rate first and the full
+range becomes reachable: at 4 fps the same driver reaches 10760 lines.
+This is the sensor's own constraint rather than a driver limit, but the
+advertised maximum does not hint at it.
+
+Raw sample scaling differs between L4T generations, which matters if the
+same code reads frames from more than one board. The sensor's bar
+pattern comes back as 1023 / 511 / 0 on R32 and as 65535 / 32767 / 0 on
+R35: the same 10-bit values, right-aligned on one and expanded to the
+full 16-bit range on the other. Normalise by the format rather than
+assuming a 10-bit range.
+
 ## Bring-up notes
 
 Things that cost real debugging time, kept here so they cost it only
@@ -334,6 +372,7 @@ once:
     dt/nano/    DT overlay, Jetson Nano 2GB (L4T R32)
     dt/xavier/  DT overlay, Xavier NX devkit (L4T R35)
     dt/orin/    DT overlay, Orin Nano/NX devkit (JetPack 7)
+    tests/      on-board checks: capture geometry and content, controls
     docs/       prior art survey, first-light and ISP captures
 
 ## Provenance and licensing
