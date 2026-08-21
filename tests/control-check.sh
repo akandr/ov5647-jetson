@@ -35,12 +35,47 @@ TMP=$(mktemp -d)
 trap 'pkill -9 v4l2-ctl 2>/dev/null; rm -rf "$TMP"' EXIT
 fail=0
 
+# Nothing here works while another process still has the device open, and
+# the usual culprit is an orphaned capture: a kill that hit a `timeout`
+# wrapper rather than v4l2-ctl, or an unprivileged pkill against a stream
+# that was started under sudo, which fails silently.
 pkill -9 v4l2-ctl 2>/dev/null
 systemctl stop nvargus-daemon 2>/dev/null
 sleep 2
+held=$(fuser "$DEV" 2>/dev/null | tr -s ' ' | sed 's/^ *//;s/ *$//')
+if [ -n "$held" ]; then
+	echo "$DEV is still held by pid(s) $held after cleanup:"
+	ps -o pid=,user=,args= -p $held 2>/dev/null | sed 's/^/  /'
+	echo "run this script as root, or kill those first"
+	exit 2
+fi
+
+# After any Argus pipeline the raw path returns nothing until the sensor
+# driver is rebound: the sensor still streams, but the VI channel stops
+# handing frames over. Rebinding rebuilds the channel, no reboot needed.
+recover_sensor() {
+	local drv=/sys/bus/i2c/drivers/ov5647 dev
+	dev=$(ls "$drv" 2>/dev/null | grep -E '^[0-9]+-[0-9a-f]+$' | head -1)
+	[ -n "$dev" ] || return 1
+	echo "$dev" > "$drv/unbind" 2>/dev/null || return 1
+	sleep 2
+	echo "$dev" > "$drv/bind" 2>/dev/null || return 1
+	sleep 3
+	[ -e "$DEV" ]
+}
 
 v4l2-ctl -d "$DEV" --set-ctrl sensor_mode=$MODE >/dev/null 2>&1
 v4l2-ctl -d "$DEV" --set-fmt-video=width=$W,height=$H,pixelformat=BG10 >/dev/null 2>&1
+rm -f "$TMP/live.raw"
+timeout 30 v4l2-ctl -d "$DEV" --stream-mmap --stream-count=3 \
+	--stream-to="$TMP/live.raw" >/dev/null 2>&1
+if [ ! -s "$TMP/live.raw" ]; then
+	echo "raw capture returns nothing, rebinding the sensor driver"
+	recover_sensor || { echo "  rebinding failed"; exit 2; }
+	v4l2-ctl -d "$DEV" --set-ctrl sensor_mode=$MODE >/dev/null 2>&1
+	v4l2-ctl -d "$DEV" --set-fmt-video=width=$W,height=$H,pixelformat=BG10 >/dev/null 2>&1
+fi
+
 FB=$(v4l2-ctl -d "$DEV" --get-fmt-video 2>/dev/null | awk '/Size Image/{print $4}')
 [ -n "$FB" ] && [ "$FB" != 0 ] || { echo "cannot read the frame size from $DEV"; exit 2; }
 

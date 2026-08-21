@@ -287,6 +287,34 @@ once:
   rejected: link integrity, check clocking. No frames at all: check
   mode timings and lanes, or (voice of experience) the ribbon. Short
   frame errors: geometry mismatch between table and DT.
+- A raw capture that returns zero bytes has two quite different causes,
+  and both were misread here as a wedged VI queue needing a reboot. It
+  never needs a reboot.
+
+  The first is a stale process still holding the device. Killing a
+  capture started as `timeout 40 v4l2-ctl ...` sends the signal to the
+  wrapper and leaves v4l2-ctl streaming under init; an unprivileged
+  `pkill` against a stream started under sudo fails without saying so.
+  `fuser /dev/video0` names the holder, though only as root, and killing
+  it restores capture at once.
+
+  The second follows any Argus pipeline. Once `nvarguscamerasrc` has
+  run, raw V4L2 capture returns nothing on both R32 and R35, whether or
+  not `nvargus-daemon` is then stopped, and no wait clears it. The
+  sensor is not the problem: during the dead capture it still reads
+  0x0100 = 1 with its mode registers intact, exactly as in a healthy
+  stream. The kernel logs `__vb2_queue_cancel` warnings from
+  videobuf2-core, which fire when a driver fails to return buffers in
+  `stop_streaming`, so the frames are lost on the Tegra VI side. Rebind
+  the sensor driver to rebuild the channel:
+
+      echo 9-0036 | sudo tee /sys/bus/i2c/drivers/ov5647/unbind
+      echo 9-0036 | sudo tee /sys/bus/i2c/drivers/ov5647/bind
+
+  (`9-0036` on the Xavier, `6-0036` on the Nano; `ls
+  /sys/bus/i2c/drivers/ov5647` gives the right one.) `tests/` does this
+  by itself, before the raw checks and again after the Argus ones, which
+  is what makes the scripts safe to run twice in a row.
 - The device tree's `pix_clk_hz` has to match the pixel clock the
   mode's PLL registers actually produce, because the framework derives
   exposure and frame-rate values from the device tree number, not from
@@ -350,6 +378,12 @@ once:
   file is a separate work item.
 - The 2592x1944 mode is raw-only; the ISP rejects it for reasons
   not yet identified (see Bring-up notes).
+- Raw V4L2 capture and Argus do not mix within one session: after an
+  Argus pipeline the raw path delivers no frames until the sensor
+  driver is rebound. This happens on both L4T generations, with the
+  sensor still streaming correctly, so it sits in the VI rather than in
+  this driver (see Bring-up notes for the evidence and the one-line
+  remedy).
 - The advertised frame rates are rounded down from what the mode
   timings produce: 15.6, 30.6, 30.0 and 62.5 fps
   (pixel clock / line length / frame length). The frame-rate control

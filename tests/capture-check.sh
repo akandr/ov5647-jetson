@@ -36,8 +36,17 @@ check_raw() { # mode width height
 	local mode=$1 w=$2 h=$3 name="mode$1 ${2}x${3}"
 
 	v4l2-ctl -d "$DEV" --set-ctrl sensor_mode="$mode" >/dev/null 2>&1
-	if ! v4l2-ctl -d "$DEV" --set-fmt-video=width="$w",height="$h",pixelformat=$FMT >/dev/null 2>&1; then
-		echo "FAIL $name: device rejected the format"; fail=1; return
+	local err
+	if ! err=$(v4l2-ctl -d "$DEV" --set-fmt-video=width="$w",height="$h",pixelformat=$FMT 2>&1); then
+		if echo "$err" | grep -qi busy; then
+			# fuser lists nothing for another user's process unless we are
+			# root, so a busy device can look like it has no owner at all.
+			echo "FAIL $name: $DEV is busy, another process still has it open" \
+			     "(run as root to see which: fuser -v $DEV)"
+		else
+			echo "FAIL $name: device rejected the format: $(echo "$err" | head -1)"
+		fi
+		fail=1; return
 	fi
 
 	local got size
@@ -54,11 +63,14 @@ check_raw() { # mode width height
 	bytes=$(stat -c %s "$TMP/raw" 2>/dev/null || echo 0)
 	expected=$((size * FRAMES))
 	if [ "$bytes" = 0 ]; then
-		# Streaming that stops with no data and no error usually means the
-		# VI queue is still holding buffers from a capture that was killed
-		# rather than stopped. Nothing clears that short of a reboot.
-		echo "FAIL $name: no data at all. If a capture was interrupted earlier," \
-		     "the VI queue is wedged (dmesg shows videobuf2 warnings); reboot the board"
+		local h
+		h=$(holders)
+		if [ -n "$h" ]; then
+			echo "FAIL $name: no data, $DEV is held by pid(s) $h:"
+			ps -o pid=,user=,args= -p $h 2>/dev/null | sed 's/^/    /'
+		else
+			echo "FAIL $name: streaming returned no data and nothing else holds $DEV"
+		fi
 		fail=1; return
 	fi
 	if [ "$bytes" != "$expected" ]; then
@@ -97,13 +109,65 @@ check_argus() { # mode width height
 	fi
 }
 
-# Argus keeps the sensor open after a pipeline ends, so a run that follows
-# an ISP check finds the device busy and captures nothing. Clear both users
-# of the sensor before touching it, and give the VI a moment to settle.
-pkill -9 v4l2-ctl 2>/dev/null
-pkill -9 gst-launch-1.0 2>/dev/null
-systemctl stop nvargus-daemon 2>/dev/null
-sleep 2
+# A capture that produces nothing almost always means something else still
+# has the device open, not that the hardware needs a reboot. The usual
+# sources are Argus, which keeps the sensor open after a pipeline ends, and
+# a capture whose kill landed on a `timeout` wrapper instead of v4l2-ctl
+# itself, leaving an orphan streaming under init. An orphan started under
+# sudo also survives an unprivileged pkill without reporting an error.
+holders() { # names whatever still has the device open
+	fuser "$DEV" 2>/dev/null | tr -s ' ' | sed 's/^ *//;s/ *$//'
+}
+free_device() {
+	pkill -9 v4l2-ctl 2>/dev/null
+	pkill -9 gst-launch-1.0 2>/dev/null
+	systemctl stop nvargus-daemon 2>/dev/null
+	sleep 2
+	local h
+	h=$(holders)
+	[ -z "$h" ] && return 0
+	echo "$DEV is still held by pid(s) $h after cleanup:"
+	ps -o pid=,user=,args= -p $h 2>/dev/null | sed 's/^/  /'
+	echo "run this script as root, or kill those first"
+	return 1
+}
+
+free_device || exit 2
+
+# An Argus pipeline leaves the raw V4L2 path returning nothing at all: the
+# sensor keeps streaming (0x0100 still reads 1 and the mode registers are
+# unchanged) but the frames stop reaching userspace, and the kernel logs
+# __vb2_queue_cancel warnings about buffers the VI channel never returned.
+# Rebinding the sensor driver tears the channel down and rebuilds it, which
+# clears the state without a reboot. Same behaviour on R32 and R35.
+recover_sensor() {
+	local drv=/sys/bus/i2c/drivers/ov5647 dev
+	dev=$(ls "$drv" 2>/dev/null | grep -E '^[0-9]+-[0-9a-f]+$' | head -1)
+	[ -n "$dev" ] || return 1
+	echo "$dev" > "$drv/unbind" 2>/dev/null || return 1
+	sleep 2
+	echo "$dev" > "$drv/bind" 2>/dev/null || return 1
+	sleep 3
+	[ -e "$DEV" ]
+}
+
+raw_alive() {
+	rm -f "$TMP/live.raw"
+	timeout 30 v4l2-ctl -d "$DEV" --stream-mmap --stream-count=3 \
+		--stream-to="$TMP/live.raw" >/dev/null 2>&1
+	[ -s "$TMP/live.raw" ]
+}
+
+if ! raw_alive; then
+	echo "raw capture returns nothing, most likely after an earlier Argus run;"
+	echo "rebinding the sensor driver"
+	if recover_sensor && raw_alive; then
+		echo "  recovered"
+	else
+		echo "  still no data after rebinding: this is not the Argus case"
+		exit 2
+	fi
+fi
 
 check_raw 0 2592 1944
 check_raw 1 1920 1080
@@ -117,6 +181,14 @@ if [ -z "$RAW_ONLY" ] && command -v gst-launch-1.0 >/dev/null; then
 	check_argus 2 1296 972
 	check_argus 3 640 480
 	echo "note: 2592x1944 through Argus is a known failure, see README"
+	# Leave the board usable: the raw path is dead until the driver is
+	# rebound, so a second run of this script would otherwise fail.
+	systemctl stop nvargus-daemon 2>/dev/null
+	if recover_sensor; then
+		echo "note: rebound the sensor driver, which the raw path needs after Argus"
+	else
+		echo "note: could not rebind the sensor driver; raw capture stays dead until reboot"
+	fi
 fi
 
 [ "$fail" = 0 ] && echo "ALL CHECKS PASSED" || echo "SOME CHECKS FAILED"
