@@ -325,6 +325,25 @@ R35: the same 10-bit values, right-aligned on one and expanded to the
 full 16-bit range on the other. Normalise by the format rather than
 assuming a 10-bit range.
 
+### Prebuilt artifacts
+
+A release carries the source tarball, the three device tree overlays and
+one kernel module per L4T line. The overlays are ready to use: the
+installer compiles the same thing from `dt/`, so a prebuilt `.dtbo`
+merges onto a board's DTB exactly as a locally built one does.
+
+A module is another matter. The kernel loads one only when its vermagic
+matches the running kernel exactly, down to the patch level, so the
+prebuilt modules fit the releases they were built on and nothing else:
+
+    uname -r                                    # what the board runs
+    modinfo -F vermagic ov5647-nano-*.ko        # what the module wants
+
+If those disagree, build from source, which is what `install.sh` does
+anyway and why the tarball rather than the binaries is the artifact that
+matters. Every release lists the kernel version, L4T release and
+vermagic of each module in its manifest.
+
 ## Bring-up notes
 
 Things that cost real debugging time, kept here so they cost it only
