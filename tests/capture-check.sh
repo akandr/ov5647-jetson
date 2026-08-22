@@ -97,15 +97,20 @@ check_raw() { # mode width height
 	echo "PASS $name: $FRAMES frames, $bytes B, mean $mean std $std max $max, $verdict"
 }
 
-check_argus() { # mode width height
-	local mode=$1 w=$2 h=$3 out
+# The frame rate has to be in the caps. Left out, nvarguscamerasrc asks for
+# its default 30 fps, which the 15 fps full-resolution mode cannot deliver, and
+# Argus refuses the stream. Only R32 names the cause, as "Frame Rate specified
+# is greater than supported"; R35 reports NvBufSurfaceFromFd failing instead,
+# which points at buffers rather than at the rate.
+check_argus() { # mode width height fps
+	local mode=$1 w=$2 h=$3 fps=$4 out
 	out=$(timeout 60 gst-launch-1.0 -q nvarguscamerasrc sensor-mode="$mode" num-buffers=10 \
-		! "video/x-raw(memory:NVMM),width=$w,height=$h" ! fakesink 2>&1)
+		! "video/x-raw(memory:NVMM),width=$w,height=$h,framerate=$fps/1" ! fakesink 2>&1)
 	if echo "$out" | grep -qiE 'error|fail'; then
-		echo "FAIL argus mode$mode ${w}x${h}: $(echo "$out" | grep -im1 -E 'error|fail')"
+		echo "FAIL argus mode$mode ${w}x${h}@$fps: $(echo "$out" | grep -im1 -E 'error|fail')"
 		fail=1
 	else
-		echo "PASS argus mode$mode ${w}x${h}"
+		echo "PASS argus mode$mode ${w}x${h}@$fps"
 	fi
 }
 
@@ -177,10 +182,10 @@ check_raw 3 640 480
 if [ -z "$RAW_ONLY" ] && command -v gst-launch-1.0 >/dev/null; then
 	systemctl start nvargus-daemon 2>/dev/null
 	sleep 2
-	check_argus 1 1920 1080
-	check_argus 2 1296 972
-	check_argus 3 640 480
-	echo "note: 2592x1944 through Argus is a known failure, see README"
+	check_argus 0 2592 1944 15
+	check_argus 1 1920 1080 30
+	check_argus 2 1296 972 30
+	check_argus 3 640 480 62
 	# Leave the board usable: the raw path is dead until the driver is
 	# rebound, so a second run of this script would otherwise fail.
 	systemctl stop nvargus-daemon 2>/dev/null

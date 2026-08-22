@@ -5,8 +5,8 @@ Camera Module v1) on NVIDIA Jetson boards. One driver source builds on
 L4T R32, R35 and JetPack 7 (kernels 4.9, 5.10, 6.8); the installer
 detects the board. The sensor reaches the NVIDIA camera stack, not
 just raw frames: hardware ISP (AE, AWB, debayer) via
-`nvarguscamerasrc` and zero-copy NVMM buffers in three of the four
-modes, plus plain V4L2 raw Bayer capture in all of them.
+`nvarguscamerasrc` and zero-copy NVMM buffers in every mode, plus
+plain V4L2 raw Bayer capture in all of them.
 
 First light, raw path: a 2592x1944 Bayer frame captured through the
 driver with V4L2, then debayered in software (2x2 Bayer quads to one
@@ -55,19 +55,16 @@ survey, with what each project did and did not do, is in
       (nominal 15, 30, 30, 62 fps; see Known limitations for the
       exact rates the timings produce)
 - [x] Raw V4L2 Bayer capture, all four modes
-- [x] Hardware ISP via `nvarguscamerasrc` for every mode except
-      2592x1944 (raw-only, see Known limitations); a 900-frame 1080p
-      run reports no dropped buffers
+- [x] Hardware ISP via `nvarguscamerasrc`, all four modes; a
+      900-frame 1080p run reports no dropped buffers
 - [x] Builds on R32 (4.9), R35 (5.10), JetPack 7 / r39 (6.8); each
       board boots its merged DTB and probes the sensor node. The 4.9
       and 5.10 boards are verified with a camera attached; on the 6.8
       board the probe stops at the I2C read, for want of a camera.
-- [x] Camera-attached test on Xavier NX: all four modes raw, ISP on
-      all but full-res, same driver and overlay as committed
+- [x] Camera-attached test on Xavier NX: all four modes raw and
+      through the ISP, same driver and overlay as committed
 - [ ] Camera-attached test on Orin (needs a 15-to-22-pin adapter ribbon)
 - [ ] ISP color tuning file (camera_overrides.isp)
-- [ ] 2560x1920 crop mode, to try to get near-full resolution through
-      the ISP
 - [ ] Prebuilt release artifacts (.ko, .dtbo, installer)
 
 ## How the capture path works
@@ -367,13 +364,16 @@ once:
   drives it through the vblank control at runtime. Left alone the
   sensor free-runs at its reset default, 17 fps instead of 30 for
   1080p. The driver writes the mode's nominal VTS explicitly.
-- The ISP rejects the 2592-wide full-resolution mode at stream start
-  (`NVMAP_IOC_READ failed [22]` in the daemon log) while the other
-  three modes stream fine. The V4L2 path takes the same mode without
-  complaint, so the sensor and the CSI link are not at fault. The
-  constraint the ISP is enforcing has not been identified; the planned
-  fix is a 2560x1920 crop mode, which sidesteps the question and is
-  worth trying before spending more time on the daemon's internals.
+- An Argus pipeline needs the frame rate in its caps whenever the mode
+  cannot reach 30 fps. Left out, `nvarguscamerasrc` asks for its own
+  default of 30, the 15 fps full-resolution mode cannot serve it, and
+  the stream is refused. This was written up here for a while as the
+  ISP rejecting the 2592-wide mode, which was wrong: with
+  `framerate=15/1` in the caps it streams on both R32 and R35. Only the
+  nano names the cause, as "Frame Rate specified is greater than
+  supported"; the xavier reports the fallout instead, `NvBufSurfaceFromFd
+  Failed`, which reads like a buffer problem and is what made this look
+  like a memory or resolution limit.
 - The order of `frmfmt[]` in the driver must mirror the `modeN` nodes
   in the DT. The index is used to look up control properties, so a
   mismatch silently computes exposure with another mode's line length.
@@ -415,8 +415,6 @@ once:
   the ISP runs generic tuning; images look washed out and pull
   magenta, as the capture above shows. AE and AWB loops work. A tuning
   file is a separate work item.
-- The 2592x1944 mode is raw-only; the ISP rejects it for reasons
-  not yet identified (see Bring-up notes).
 - Raw V4L2 capture and Argus do not mix within one session: after an
   Argus pipeline the raw path delivers no frames until the sensor
   driver is rebound. This happens on both L4T generations, with the
