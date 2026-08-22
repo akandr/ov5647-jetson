@@ -316,9 +316,20 @@ once:
   Nano's VI then counts frames at the right cadence but rejects each
   one with `tegra_channel_error_status: error 20022` and delivers zero
   bytes. The fix is a continuous clock on both sides: `0x4800 = 0x04`
-  in every mode table and `discontinuous_clk = "no"` in the DT. It is
-  one of only two registers in which these tables differ from
-  mainline's.
+  in every mode table and `discontinuous_clk = "no"` in the DT. The bit
+  that matters is 5, the clock lane gate: mainline sets it, so the clock
+  lane stops between packets, and these tables clear it so it free-runs.
+- These tables came from mainline and have since drifted from it, in
+  five places. Two are deliberate: the clock gate above, and 0x0100,
+  which stays 0 because streaming is driven from separate start and stop
+  tables rather than from the mode table. Two are harmless: these tables
+  program the line length in 0x380c and 0x380d where mainline leaves the
+  reset default, to the same values it assumes; and they set 0x3821 bit
+  2, `r_mirror_isp`, which measurably does nothing here because the
+  sensor's own ISP is not in the raw path. The fifth is real: mainline
+  unified the PLL across the full, 1080p and binned modes in December
+  2025, so upstream now clocks the latter two at 87.5 MHz where these
+  tables clock them at 81.67 MHz, and runs them about 7% faster.
 - The failure signature tells you where to look. Frames counted but
   rejected: link integrity, check clocking. No frames at all: check
   mode timings and lanes, or (voice of experience) the ribbon. Short
