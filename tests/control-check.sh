@@ -134,11 +134,21 @@ v4l2-ctl -d "$DEV" --set-ctrl frame_rate=30000000 >/dev/null 2>&1
 # Exposure and gain need light. Their effect is judged as a ratio against
 # the sensor black level, so a covered lens is reported as inconclusive
 # rather than as a driver failure.
+#
+# "Too dark" has to be relative, not a count. R32 hands over the 10-bit
+# sample right-aligned and R35 expands it to the full 16-bit range, so the
+# same scene reads about 64x higher on R35 and its black level sits near 960
+# rather than near 15. A fixed threshold in counts passes stray light through
+# as signal there and then fails the check it should have skipped.
+too_dark() { # lit black -> true when the difference is negligible
+	python3 -c "import sys; sys.exit(0 if $1 - $2 < 0.05 * $2 else 1)"
+}
+
 echo "== exposure"
 read -r dark _ _ <<<"$(probe "gain=16,exposure=93" 40)"
 read -r lo _ _ <<<"$(probe "gain=16,exposure=2000" 40)"
-read -r hi hi_std hi_max <<<"$(probe "gain=16,exposure=32000" 40)"
-if python3 -c "import sys; sys.exit(0 if $hi - $dark < 3 else 1)"; then
+read -r hi _ _ <<<"$(probe "gain=16,exposure=32000" 40)"
+if too_dark "$hi" "$dark"; then
 	echo "SKIP exposure: the scene is too dark to tell (mean $dark to $hi)"
 else
 	rise=$(python3 -c "print('%.2f' % (($hi - $dark) / max($lo - $dark, 0.1)))")
@@ -155,7 +165,7 @@ fi
 echo "== gain"
 read -r g1 _ _ <<<"$(probe "exposure=2000,gain=16" 40)"
 read -r g2 _ _ <<<"$(probe "exposure=2000,gain=256" 40)"
-if python3 -c "import sys; sys.exit(0 if $g2 - $dark < 3 else 1)"; then
+if too_dark "$g2" "$dark"; then
 	echo "SKIP gain: the scene is too dark to tell"
 else
 	rise=$(python3 -c "print('%.2f' % (($g2 - $dark) / max($g1 - $dark, 0.1)))")
