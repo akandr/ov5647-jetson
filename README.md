@@ -55,6 +55,7 @@ survey, with what each project did and did not do, is in
       (nominal 15, 30, 30, 62 fps; see Known limitations for the
       exact rates the timings produce)
 - [x] Raw V4L2 Bayer capture, all four modes
+- [x] Module identity from the sensor's OTP memory, as `otp_data`
 - [x] Hardware ISP via `nvarguscamerasrc`, all four modes; a
       900-frame 1080p run reports no dropped buffers
 - [x] Builds on R32 (4.9), R35 (5.10), JetPack 7 / r39 (6.8); each
@@ -218,6 +219,24 @@ Note that the mode tables read out mirrored already, so the driver
 toggles the bits rather than setting them: `horizontal-mirror` means
 the opposite of what the tables do, which is the change a user asking
 for it wants to see.
+
+### Module identity
+
+Each sensor carries 256 bits of one-time programmable memory, which the
+module vendor uses for identification. The driver reads it once at probe
+and hands it over as a standard control:
+
+    v4l2-ctl -d /dev/video0 --get-ctrl otp_data
+
+The two Raspberry Pi Camera v1 modules here answer with five populated
+bytes apiece, different between them, so the value tells one camera from
+another on a bench with several. Modules with blank memory read as
+zeroes and the probe carries on regardless.
+
+The read needs the sensor's internal clock, which only runs once it is
+out of standby, so the driver briefly enables streaming for it. Powered
+but idle, as the sensor is for most of probe, the buffer comes back
+empty.
 
 ## Install
 

@@ -68,6 +68,15 @@
 #define OV5647_REG_TIMING_TC_21		0x3821
 #define OV5647_VFLIP			BIT(1)
 #define OV5647_MIRROR			BIT(1)
+#define OV5647_REG_OTP_DATA		0x3d00
+#define OV5647_REG_OTP_LOAD		0x3d21
+#define OV5647_OTP_LOAD_EN		BIT(0)
+#define OV5647_OTP_RD_BUSY		BIT(7)
+/* The sensor holds 256 bits of one-time programmable memory for chip and
+ * module identification, read out through a 32-byte buffer.
+ */
+#define OV5647_OTP_SIZE			32
+#define OV5647_OTP_STR_SIZE		(OV5647_OTP_SIZE * 2 + 1)
 #define OV5647_REG_GROUP_ACCESS		0x3208
 #define OV5647_GROUP_CTRL		GENMASK(7, 4)
 #define OV5647_GROUP_CTRL_ENTER		0x0
@@ -109,6 +118,7 @@ static const u32 ctrl_cid_list[] = {
 	TEGRA_CAMERA_CID_EXPOSURE,
 	TEGRA_CAMERA_CID_FRAME_RATE,
 	TEGRA_CAMERA_CID_SENSOR_MODE_ID,
+	TEGRA_CAMERA_CID_OTP_DATA,
 };
 
 struct ov5647 {
@@ -118,6 +128,7 @@ struct ov5647 {
 	bool				pwdn_gpio_owned;
 	struct camera_common_data	*s_data;
 	struct tegracam_device		*tc_dev;
+	u8				otp[OV5647_OTP_SIZE];
 	struct dentry			*debugfs_dir;
 	struct mutex			debugfs_lock;
 	u16				debugfs_addr;
@@ -369,6 +380,87 @@ static void ov5647_debugfs_remove(struct ov5647 *priv)
 	priv->debugfs_dir = NULL;
 }
 
+/* The OTP buffer holds whatever the module vendor programmed: on the Raspberry
+ * Pi Camera v1 modules seen here, five bytes that differ from module to module
+ * and identify the part. Loading it is a one-shot: the load bit going from 0 to
+ * 1 starts the read, bit 7 reports it still running, and the result lands in a
+ * 32-byte buffer. Done once at probe, while power is already on for the chip-ID
+ * read, so nothing has to touch the bus during streaming.
+ */
+static int ov5647_read_otp(struct ov5647 *priv)
+{
+	struct camera_common_data *s_data = priv->s_data;
+	int err, i;
+	u8 val;
+
+	/* The buffer fills behind the regmap's back and the busy bit reads
+	 * differently from the value just written to the same register, so
+	 * none of this can come from the cache.
+	 */
+	regcache_cache_bypass(s_data->regmap, true);
+
+	/* The load needs the sensor's internal clock, which only runs once it
+	 * is out of standby: powered but idle, as it is at probe, the buffer
+	 * comes back as zeroes. Streaming is enabled for the read and turned
+	 * straight back off; nothing is capturing yet, so the frames the sensor
+	 * emits meanwhile go nowhere.
+	 */
+	err = ov5647_write_table(priv, ov5647_start_stream);
+	if (err)
+		goto out;
+	usleep_range(5000, 6000);
+
+	err = ov5647_write_reg(s_data, OV5647_REG_OTP_LOAD, 0);
+	if (!err)
+		err = ov5647_write_reg(s_data, OV5647_REG_OTP_LOAD,
+				       OV5647_OTP_LOAD_EN);
+	if (err)
+		goto out;
+
+	for (i = 0; i < 20; i++) {
+		usleep_range(1000, 1500);
+		err = ov5647_read_reg(s_data, OV5647_REG_OTP_LOAD, &val);
+		if (err)
+			goto out;
+		if (!(val & OV5647_OTP_RD_BUSY))
+			break;
+	}
+
+	for (i = 0; i < OV5647_OTP_SIZE; i++) {
+		err = ov5647_read_reg(s_data, OV5647_REG_OTP_DATA + i,
+				      &priv->otp[i]);
+		if (err)
+			goto out;
+	}
+
+out:
+	ov5647_write_table(priv, ov5647_stop_stream);
+	regcache_cache_bypass(s_data->regmap, false);
+
+	return err;
+}
+
+static int ov5647_fill_string_ctrl(struct tegracam_device *tc_dev,
+				   struct v4l2_ctrl *ctrl)
+{
+	struct ov5647 *priv = (struct ov5647 *)tegracam_get_privdata(tc_dev);
+	int i;
+
+	switch (ctrl->id) {
+	case TEGRA_CAMERA_CID_OTP_DATA:
+		for (i = 0; i < OV5647_OTP_SIZE; i++)
+			sprintf(&ctrl->p_new.p_char[i * 2], "%02x",
+				priv->otp[i]);
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	ctrl->p_cur.p_char = ctrl->p_new.p_char;
+
+	return 0;
+}
+
 /* Without this, a multi-register control update applies byte by byte and can
  * straddle a frame boundary, exposing one frame with a mixed value. Held
  * writes go to the group's SRAM instead and reach the sensor together when
@@ -532,11 +624,19 @@ static int ov5647_set_exposure(struct tegracam_device *tc_dev, s64 val)
 
 static struct tegracam_ctrl_ops ov5647_ctrl_ops = {
 	.numctrls = ARRAY_SIZE(ctrl_cid_list),
+	/* Indexed by the framework's own constants, not by position in
+	 * ctrl_cid_list: a size left at zero fails control registration and
+	 * takes the whole probe down with it.
+	 */
+	.string_ctrl_size = {
+		[TEGRA_CAM_STRING_CTRL_OTP_INDEX] = OV5647_OTP_STR_SIZE,
+	},
 	.ctrl_cid_list = ctrl_cid_list,
 	.set_gain = ov5647_set_gain,
 	.set_exposure = ov5647_set_exposure,
 	.set_frame_rate = ov5647_set_frame_rate,
 	.set_group_hold = ov5647_set_group_hold,
+	.fill_string_ctrl = ov5647_fill_string_ctrl,
 };
 
 static void ov5647_gpio_set(unsigned int gpio, int val)
@@ -900,6 +1000,11 @@ static int ov5647_board_setup(struct ov5647 *priv)
 	} else {
 		dev_info(dev, "OV5647 detected (chip id 0x%02x%02x)\n",
 			reg_val[0], reg_val[1]);
+		/* Identification only: a module with blank OTP is still fine,
+		 * so a failure here must not stop the probe.
+		 */
+		if (ov5647_read_otp(priv))
+			dev_warn(dev, "could not read OTP identification\n");
 	}
 
 err_reg_probe:
