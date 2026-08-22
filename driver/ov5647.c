@@ -188,11 +188,6 @@ static int ov5647_group_access(struct camera_common_data *s_data, u8 ctrl)
 				FIELD_PREP(OV5647_GROUP_ID, OV5647_CTRL_GROUP));
 }
 
-/* Without this, a multi-register control update applies byte by byte and can
- * straddle a frame boundary, exposing one frame with a mixed value. Held
- * writes go to the group's SRAM instead and reach the sensor together when
- * the group is launched.
- */
 /* Register access from userspace. The sensor only answers over I2C while it
  * is powered, which tegracam does around streaming, so every entry point
  * checks that first: poking a powered-down sensor wedges the I2C bus rather
@@ -364,6 +359,11 @@ static void ov5647_debugfs_remove(struct ov5647 *priv)
 	priv->debugfs_dir = NULL;
 }
 
+/* Without this, a multi-register control update applies byte by byte and can
+ * straddle a frame boundary, exposing one frame with a mixed value. Held
+ * writes go to the group's SRAM instead and reach the sensor together when
+ * the group is launched.
+ */
 static int ov5647_set_group_hold(struct tegracam_device *tc_dev, bool val)
 {
 	struct camera_common_data *s_data = tc_dev->s_data;
