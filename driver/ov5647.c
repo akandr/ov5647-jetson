@@ -68,6 +68,8 @@
 #define OV5647_REG_TIMING_TC_21		0x3821
 #define OV5647_VFLIP			BIT(1)
 #define OV5647_MIRROR			BIT(1)
+#define OV5647_REG_TEST_PATTERN		0x503d
+#define OV5647_TEST_PATTERN_EN		BIT(7)
 #define OV5647_REG_OTP_DATA		0x3d00
 #define OV5647_REG_OTP_LOAD		0x3d21
 #define OV5647_OTP_LOAD_EN		BIT(0)
@@ -344,6 +346,105 @@ static ssize_t ov5647_dbg_reg_write(struct file *file, const char __user *ubuf,
 	return err ? err : count;
 }
 
+/* The sensor can replace the pixel array with a generated image, which
+ * exercises CSI, VI and the whole capture path without light, a lens or even a
+ * camera pointed at anything. Reachable through the reg file above, but only
+ * if you know the register and the bit layout, so it gets names of its own.
+ * Bit 7 enables the generator and bits 1:0 pick what it draws. Type 2, which
+ * the datasheet calls random data, comes out of this sensor identical to the
+ * colour bar, two distinct values across a row where random data would give
+ * hundreds, so it is not offered under a name that would misdescribe it. The
+ * reg file still reaches it, and the styles and effects in bits 3 to 6, for
+ * anyone who wants them.
+ */
+static const struct ov5647_pattern {
+	const char	*name;
+	u8		val;
+} ov5647_patterns[] = {
+	{ "off",     0 },
+	{ "bars",    OV5647_TEST_PATTERN_EN | 0 },
+	{ "squares", OV5647_TEST_PATTERN_EN | 1 },
+};
+
+static int ov5647_dbg_pattern_show(struct seq_file *s, void *unused)
+{
+	struct ov5647 *priv = s->private;
+	int err, i;
+	u8 val;
+
+	mutex_lock(&priv->debugfs_lock);
+	err = ov5647_dbg_read(priv, OV5647_REG_TEST_PATTERN, &val);
+	mutex_unlock(&priv->debugfs_lock);
+
+	if (err == -ENODEV) {
+		seq_puts(s, "sensor is powered off, start a capture first\n");
+		return 0;
+	}
+	if (err)
+		return err;
+
+	for (i = 0; i < ARRAY_SIZE(ov5647_patterns); i++) {
+		if (ov5647_patterns[i].val == val) {
+			seq_printf(s, "%s\n", ov5647_patterns[i].name);
+			return 0;
+		}
+	}
+
+	/* Bits this interface does not name, such as the rolling bar or a
+	 * different bar style, are still readable as the raw value.
+	 */
+	seq_printf(s, "0x%02x\n", val);
+
+	return 0;
+}
+
+static int ov5647_dbg_pattern_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, ov5647_dbg_pattern_show, inode->i_private);
+}
+
+static ssize_t ov5647_dbg_pattern_write(struct file *file,
+					const char __user *ubuf,
+					size_t count, loff_t *ppos)
+{
+	struct ov5647 *priv = ((struct seq_file *)file->private_data)->private;
+	char buf[16];
+	int err, i;
+
+	if (count == 0 || count >= sizeof(buf))
+		return -EINVAL;
+	if (copy_from_user(buf, ubuf, count))
+		return -EFAULT;
+	buf[count] = '\0';
+
+	for (i = 0; i < ARRAY_SIZE(ov5647_patterns); i++) {
+		if (sysfs_streq(buf, ov5647_patterns[i].name))
+			break;
+	}
+	if (i == ARRAY_SIZE(ov5647_patterns))
+		return -EINVAL;
+
+	mutex_lock(&priv->debugfs_lock);
+	if (priv->s_data->power->state != SWITCH_ON) {
+		mutex_unlock(&priv->debugfs_lock);
+		return -ENODEV;
+	}
+	err = ov5647_write_reg(priv->s_data, OV5647_REG_TEST_PATTERN,
+			       ov5647_patterns[i].val);
+	mutex_unlock(&priv->debugfs_lock);
+
+	return err ? err : count;
+}
+
+static const struct file_operations ov5647_dbg_pattern_fops = {
+	.owner		= THIS_MODULE,
+	.open		= ov5647_dbg_pattern_open,
+	.read		= seq_read,
+	.write		= ov5647_dbg_pattern_write,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
 static const struct file_operations ov5647_dbg_reg_fops = {
 	.owner		= THIS_MODULE,
 	.open		= ov5647_dbg_reg_open,
@@ -372,6 +473,8 @@ static void ov5647_debugfs_init(struct ov5647 *priv)
 			    &ov5647_dbg_regs_fops);
 	debugfs_create_file("reg", 0600, priv->debugfs_dir, priv,
 			    &ov5647_dbg_reg_fops);
+	debugfs_create_file("test_pattern", 0600, priv->debugfs_dir, priv,
+			    &ov5647_dbg_pattern_fops);
 }
 
 static void ov5647_debugfs_remove(struct ov5647 *priv)

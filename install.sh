@@ -4,6 +4,7 @@
 # OV5647 (Pi Camera v1) driver installer for NVIDIA Jetson. Run ON the board.
 #
 #   git clone <this repo> && cd ov5647-jetson && sudo ./install.sh
+#   sudo ./install.sh --uninstall     # put the board back as it was
 #
 # Supported boards / L4T lines:
 #   Jetson Nano 2GB  (P3448-0003 + P3542)      L4T R32.7.x  (kernel 4.9)
@@ -19,9 +20,9 @@
 #      actually boots (stock DTB is NOT touched)
 #   4. installs the module into /lib/modules, runs depmod, and points the
 #      extlinux.conf FDT line at the merged copy
-# To revert: restore the extlinux.conf.orig backup this script makes and
-# remove the module and the files this script writes under /boot. The
-# exact commands are printed at the end of a successful run.
+# To revert: run it again with --uninstall, which restores the
+# extlinux.conf backup this script makes and removes the module and the
+# files it wrote under /boot.
 #
 # The camera goes in the CAM0 connector (Orin devkits need a 15->22 pin
 # adapter ribbon). Reboot after installing.
@@ -29,6 +30,13 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 [ "$(id -u)" = 0 ] || { echo "ERROR: run with sudo" >&2; exit 1; }
+
+UNINSTALL=""
+case "${1:-}" in
+"")		;;
+--uninstall)	UNINSTALL=1 ;;
+*)		echo "usage: $0 [--uninstall]" >&2; exit 2 ;;
+esac
 
 echo "== detect board =="
 model=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || true)
@@ -101,6 +109,28 @@ esac
 echo "board type: $BOARD"
 
 KVER=$(uname -r)
+
+# Undo exactly what a successful install wrote, in the reverse order: the boot
+# entry first, so a half-finished removal still leaves the board booting the
+# stock tree rather than a merged one whose files are gone.
+if [ -n "$UNINSTALL" ]; then
+	echo "== uninstall =="
+	if [ -e "$EXT.orig" ]; then
+		cp "$EXT.orig" "$EXT"
+		echo "restored $EXT from the backup taken at install"
+	else
+		echo "no $EXT.orig backup: leaving $EXT alone"
+		echo "  check its FDT line by hand if it names $OV"
+	fi
+	rm -f "/lib/modules/$KVER/updates/ov5647.ko" "$OV" "$PRISTINE" "$BASE_SRC"
+	depmod -a "$KVER"
+	rmmod ov5647 2>/dev/null || true
+	echo "removed the module and the files under /boot"
+	echo
+	echo "Uninstalled. Reboot to go back to the stock device tree."
+	exit 0
+fi
+
 APT_UPDATED=""
 apt_install() { # refresh the lists once, then install
 	[ -n "$APT_UPDATED" ] || { apt-get update || true; APT_UPDATED=1; }
@@ -193,6 +223,4 @@ echo
 echo "Installed ($BOARD). Reboot, then test with:"
 echo "  gst-launch-1.0 nvarguscamerasrc ! 'video/x-raw(memory:NVMM),width=1920,height=1080' ! fakesink"
 echo "To uninstall:"
-echo "  cp $EXT.orig $EXT"
-echo "  rm -f /lib/modules/$KVER/updates/ov5647.ko $OV $PRISTINE $BASE_SRC"
-echo "  depmod -a && reboot"
+echo "  sudo ./install.sh --uninstall && sudo reboot"

@@ -430,8 +430,20 @@ once:
       echo 0x300a > /sys/kernel/debug/ov5647-6-0036/reg
       cat /sys/kernel/debug/ov5647-6-0036/reg      # 0x300a 0x56
 
-  This is also the way to reach registers the driver does not drive.
-  Writing `0x503d 0x80` turns on the sensor's colour-bar test pattern,
+  `test_pattern` drives the sensor's own image generator by name, `off`,
+  `bars` or `squares`, which replaces the pixel array and so exercises
+  CSI, VI and the capture path with no light, no lens and nothing in
+  front of the camera:
+
+      echo bars > /sys/kernel/debug/ov5647-6-0036/test_pattern
+
+  The datasheet lists a third type, random data, which this sensor
+  renders identically to the colour bar, so it is not given a name here.
+  The `reg` file still reaches it, and the bar styles and rolling-bar
+  effect with it.
+
+  That file is also the way to reach registers the driver does not
+  drive. Writing `0x503d 0x80` turns on the colour-bar pattern by hand,
   which exercises CSI, VI and the capture path with no light and no
   lens: on a dark bench the frame mean goes from 13 to 511 and the
   column variance from 1 to 359. Set it back to `0x00`, or restart the
