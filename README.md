@@ -183,6 +183,45 @@ exposure and frame-rate register values from the device tree numbers,
 not from the driver. Frame length is the exception: it lives only in
 the driver, which writes each mode's nominal value in `set_mode`.
 
+### Orientation
+
+A module mounted upside down or facing a mirror is corrected in the
+sensor node, with either or both of:
+
+    horizontal-mirror;
+    vertical-flip;
+
+They apply to every mode, and the property names follow NVIDIA's
+reference sensor drivers. Orientation has to come from the device tree
+rather than from `V4L2_CID_HFLIP` and `V4L2_CID_VFLIP`, because the
+tegracam control list is fixed and has no entry for a flip.
+
+Flipping an axis reverses the readout order, which moves the Bayer
+phase by one pixel and would leave the frames starting on a different
+colour than the `bggr` the overlay declares. The driver corrects for
+that, so the advertised format stays true in any orientation. The
+correction differs per axis, which measurement settled rather than the
+datasheet: horizontally the phase follows the width of the read-out
+window, so only its left edge moves, while the line length on the wire
+comes from the output size register and does not change. Vertically
+both edges move, because dropping a line leaves the VI waiting for a
+frame that never completes, reported as `MW_ACK_DONE syncpoint time
+out` with frames of zeroes.
+
+The image mirrors in both axes on R32 and R35. The Bayer phase was
+checked separately, under diffuse light rather than against a screen,
+and holds in the full-resolution and binned modes; the other two read
+out unbinned and this bench could not light them brightly enough to
+judge. Do not use an LCD as the target for that check: an unbinned mode
+resolves its subpixel stripes finely enough that mirroring the image
+moves the colour onto a different Bayer position, which looks exactly
+like a phase the driver failed to correct.
+
+Note that the mode tables read out mirrored already, so the driver
+toggles the bits rather than setting them: `horizontal-mirror` means
+the opposite of what the tables do, which is the change a user asking
+for it wants to see.
+
 ## Install
 
 The camera goes in the CAM0 connector. The overlays wire that port

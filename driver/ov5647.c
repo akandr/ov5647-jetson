@@ -58,6 +58,16 @@
 #define OV5647_REG_GAIN_LO		0x350b
 #define OV5647_REG_VTS_HI		0x380e
 #define OV5647_REG_VTS_LO		0x380f
+#define OV5647_REG_X_START_HI		0x3800
+#define OV5647_REG_X_START_LO		0x3801
+#define OV5647_REG_Y_START_HI		0x3802
+#define OV5647_REG_Y_START_LO		0x3803
+#define OV5647_REG_Y_END_HI		0x3806
+#define OV5647_REG_Y_END_LO		0x3807
+#define OV5647_REG_TIMING_TC_20		0x3820
+#define OV5647_REG_TIMING_TC_21		0x3821
+#define OV5647_VFLIP			BIT(1)
+#define OV5647_MIRROR			BIT(1)
 #define OV5647_REG_GROUP_ACCESS		0x3208
 #define OV5647_GROUP_CTRL		GENMASK(7, 4)
 #define OV5647_GROUP_CTRL_ENTER		0x0
@@ -688,6 +698,15 @@ static struct camera_common_pdata *ov5647_parse_dt(
 	}
 	board_priv_pdata->reset_gpio = (unsigned int)gpio;
 
+	/* Orientation is a property of how the module is mounted, so it comes
+	 * from the device tree: the tegracam control list is fixed and has no
+	 * entry for a flip, which rules out V4L2_CID_HFLIP and V4L2_CID_VFLIP.
+	 * Property names follow NVIDIA's reference sensor drivers.
+	 */
+	board_priv_pdata->h_mirror = of_property_read_bool(np,
+							  "horizontal-mirror");
+	board_priv_pdata->v_flip = of_property_read_bool(np, "vertical-flip");
+
 	/* no mclk: the camera module has its own 25 MHz oscillator */
 	/* no regulators: module powered from the always-on 3V3 rail */
 
@@ -697,6 +716,96 @@ error:
 	devm_kfree(dev, board_priv_pdata);
 
 	return ret;
+}
+
+static int ov5647_toggle_reg(struct camera_common_data *s_data, u16 addr,
+			     u8 mask)
+{
+	int err;
+	u8 val;
+
+	err = ov5647_read_reg(s_data, addr, &val);
+	if (err)
+		return err;
+
+	return ov5647_write_reg(s_data, addr, val ^ mask);
+}
+
+/* Move one window edge by a pixel. */
+static int ov5647_shift_edge(struct camera_common_data *s_data, u16 hi_addr,
+			     u16 lo_addr)
+{
+	int err;
+	u8 hi, lo;
+	u16 val;
+
+	err = ov5647_read_reg(s_data, hi_addr, &hi);
+	if (!err)
+		err = ov5647_read_reg(s_data, lo_addr, &lo);
+	if (err)
+		return err;
+
+	val = ((hi << 8) | lo) + 1;
+
+	err = ov5647_write_reg(s_data, hi_addr, val >> 8);
+	if (!err)
+		err = ov5647_write_reg(s_data, lo_addr, val & 0xff);
+
+	return err;
+}
+
+/* Flipping an axis reverses the readout order, which moves the Bayer phase by
+ * one pixel: the mosaic then starts on a different colour and the "bggr" the
+ * device tree declares no longer describes the frames. Moving the read-out
+ * window by a pixel along the same axis puts the phase back, so the advertised
+ * format stays true whatever the orientation.
+ *
+ * Both bits are toggled rather than set. The mode tables already mirror
+ * horizontally, so horizontal-mirror means the opposite of what they do, which
+ * is the change a user asking for it wants to see. They leave the vertical bit
+ * clear, so there a toggle and a set come to the same thing.
+ */
+static int ov5647_set_orientation(struct tegracam_device *tc_dev)
+{
+	struct camera_common_data *s_data = tc_dev->s_data;
+	struct camera_common_pdata *pdata = s_data->pdata;
+	int err;
+
+	if (!pdata || (!pdata->h_mirror && !pdata->v_flip))
+		return 0;
+
+	/* The two axes need different corrections, which measurement settled
+	 * rather than the datasheet. Horizontally the phase follows the width
+	 * of the read-out window, so only its left edge moves; the line length
+	 * on the wire is set by the DVP output size and does not change.
+	 * Vertically both edges move: moving only the top edge drops a line,
+	 * and the VI then waits for a frame that never completes, which
+	 * appears as MW_ACK_DONE syncpoint timeouts and frames of zeroes.
+	 */
+	if (pdata->h_mirror) {
+		err = ov5647_toggle_reg(s_data, OV5647_REG_TIMING_TC_21,
+					OV5647_MIRROR);
+		if (!err)
+			err = ov5647_shift_edge(s_data, OV5647_REG_X_START_HI,
+						OV5647_REG_X_START_LO);
+		if (err)
+			return err;
+	}
+
+	if (pdata->v_flip) {
+		err = ov5647_toggle_reg(s_data, OV5647_REG_TIMING_TC_20,
+					OV5647_VFLIP);
+		if (!err)
+			err = ov5647_shift_edge(s_data, OV5647_REG_Y_START_HI,
+						OV5647_REG_Y_START_LO);
+		if (!err)
+			err = ov5647_shift_edge(s_data, OV5647_REG_Y_END_HI,
+						OV5647_REG_Y_END_LO);
+		if (err)
+			return err;
+	}
+
+	return 0;
 }
 
 static int ov5647_set_mode(struct tegracam_device *tc_dev)
@@ -721,7 +830,7 @@ static int ov5647_set_mode(struct tegracam_device *tc_dev)
 
 	priv->frame_length = vts;
 
-	return 0;
+	return ov5647_set_orientation(tc_dev);
 }
 
 static int ov5647_start_streaming(struct tegracam_device *tc_dev)
