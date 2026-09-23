@@ -51,22 +51,23 @@ survey, with what each project did and did not do, is in
 
 - [x] Chip detection over I2C (addr 0x36, ID 0x5647)
 - [x] tegracam probe and bind on hardware
-- [x] Modes: 2592x1944, 1920x1080, 1296x972, 640x480
-      (nominal 15, 30, 30, 62 fps; see Known limitations for the
+- [x] Modes: 2592x1944, 1920x1080, 1296x972, 640x480, 1280x720
+      (nominal 15, 30, 30, 62, 60 fps; see Known limitations for the
       exact rates the timings produce)
-- [x] Raw V4L2 Bayer capture, all four modes
+- [x] Raw V4L2 Bayer capture, all five modes
 - [x] Module identity from the sensor's OTP memory, as `otp_data`
-- [x] Hardware ISP via `nvarguscamerasrc`, all four modes; a
+- [x] Hardware ISP via `nvarguscamerasrc`, all five modes; a
       900-frame 1080p run reports no dropped buffers
 - [x] Builds on R32 (4.9), R35 (5.10), JetPack 7 / r39 (6.8); each
       board boots its merged DTB and probes the sensor node. The 4.9
       and 5.10 boards are verified with a camera attached; on the 6.8
       board the probe stops at the I2C read, for want of a camera.
-- [x] Camera-attached test on Xavier NX: all four modes raw and
+- [x] Camera-attached test on Xavier NX: all five modes raw and
       through the ISP, same driver and overlay as committed
 - [ ] Camera-attached test on Orin (needs a 15-to-22-pin adapter ribbon)
 - [ ] ISP color tuning file (camera_overrides.isp)
-- [ ] Prebuilt release artifacts (.ko, .dtbo, installer)
+- [x] Prebuilt release artifacts (.ko, .dtbo, source tarball), with a
+      manifest naming the kernel each module was built for
 
 ## How the capture path works
 
@@ -160,7 +161,7 @@ groups:
   complete camera graph, wired for the stock IMX219. The overlay swaps
   the sensor: it disables the IMX219 node, adds the OV5647 on the
   camera I2C bus, repoints the NVCSI input endpoint and rebadges the
-  `tegra-camera-platform` entry. The sensor node with its four mode
+  `tegra-camera-platform` entry. The sensor node with its five mode
   descriptions is the bulk of the file; the rewiring itself is a
   handful of lines.
 - JetPack 7 (Orin) ships a DTB with the SoC blocks present but nothing
@@ -206,14 +207,20 @@ both edges move, because dropping a line leaves the VI waiting for a
 frame that never completes, reported as `MW_ACK_DONE syncpoint time
 out` with frames of zeroes.
 
-The image mirrors in both axes on R32 and R35. The Bayer phase was
-checked separately, under diffuse light rather than against a screen,
-and holds in the full-resolution and binned modes; the other two read
-out unbinned and this bench could not light them brightly enough to
-judge. Do not use an LCD as the target for that check: an unbinned mode
-resolves its subpixel stripes finely enough that mirroring the image
-moves the colour onto a different Bayer position, which looks exactly
-like a phase the driver failed to correct.
+The image mirrors in both axes on R32 and R35, measured rather than
+eyeballed: a frame captured with both properties set correlates +0.90 on
+one board and +0.73 on the other against the baseline frame turned over,
+and near zero against the baseline as it was. The Bayer phase holds in
+all five modes, each compared against full resolution under one light.
+
+Two things make that check easy to get wrong. Do not use an LCD as the
+target: an unbinned mode resolves its subpixel stripes finely enough that
+mirroring the image moves the colour onto a different Bayer position,
+which looks exactly like a phase the driver failed to correct. And judge
+the phase by where red lands, not by where blue lands. Any shift of the
+mosaic moves red, while blue and green can sit a fraction of a percent
+apart depending on what the scene is lit with, which makes a verdict
+drawn from the darkest of the four a coin toss.
 
 Note that the mode tables read out mirrored already, so the driver
 toggles the bits rather than setting them: `horizontal-mirror` means
@@ -357,17 +364,26 @@ once:
   in every mode table and `discontinuous_clk = "no"` in the DT. The bit
   that matters is 5, the clock lane gate: mainline sets it, so the clock
   lane stops between packets, and these tables clear it so it free-runs.
-- These tables came from mainline and have since drifted from it, in
-  five places. Two are deliberate: the clock gate above, and 0x0100,
-  which stays 0 because streaming is driven from separate start and stop
-  tables rather than from the mode table. Two are harmless: these tables
-  program the line length in 0x380c and 0x380d where mainline leaves the
-  reset default, to the same values it assumes; and they set 0x3821 bit
-  2, `r_mirror_isp`, which measurably does nothing here because the
-  sensor's own ISP is not in the raw path. The fifth is real: mainline
+- These tables came from mainline and differ from it in four places,
+  all accounted for. Two are deliberate: the clock gate above, and
+  0x0100, which stays 0 because streaming is driven from separate start
+  and stop tables rather than from the mode table. Two are harmless:
+  these tables program the line length in 0x380c and 0x380d where
+  mainline leaves the reset default, to the same values it assumes; and
+  they set 0x3821 bit 2, `r_mirror_isp`, which measurably does nothing
+  here because the sensor's own ISP is not in the raw path.
+
+  A fifth difference used to be listed here and is now gone. Mainline
   unified the PLL across the full, 1080p and binned modes in December
-  2025, so upstream now clocks the latter two at 87.5 MHz where these
-  tables clock them at 81.67 MHz, and runs them about 7% faster.
+  2025; these tables kept the older split, clocking the middle two modes
+  at 81.67 MHz instead of 87.5. Before taking the newer value it was
+  measured rather than assumed: writing 0x3036 mid-stream through the
+  register interface on both a Nano and a Xavier NX moved the binned
+  mode from 30.1 to 32.2 fps and 1080p from 30.7 to 32.9, with nothing
+  logged by the VI or the CSI on either board. The tables now carry
+  mainline's multiplier, and the overlays carry the clock that goes with
+  it. The default frame rate stays 30 in both modes, where applications
+  and Argus expect it; what changed is the ceiling.
 - The failure signature tells you where to look. Frames counted but
   rejected: link integrity, check clocking. No frames at all: check
   mode timings and lanes, or (voice of experience) the ribbon. Short
@@ -482,11 +498,17 @@ once:
   sensor still streaming correctly, so it sits in the VI rather than in
   this driver (see Bring-up notes for the evidence and the one-line
   remedy).
-- The advertised frame rates are rounded down from what the mode
-  timings produce: 15.6, 30.6, 30.0 and 62.5 fps
-  (pixel clock / line length / frame length). The frame-rate control
-  reaches a requested rate to within one line time, since frame length
-  is programmed in whole lines.
+- What the mode timings produce is 15.6, 32.8, 32.2, 62.5 and 60.0 fps
+  (pixel clock / line length / frame length). Modes 0, 3 and 4 advertise
+  that, rounded down, as their default; modes 1 and 2 default to a round
+  30 and keep the rest as headroom the frame-rate control can ask for.
+  That control reaches a requested rate to within one line time, since
+  frame length is programmed in whole lines.
+- Mode 4, 1280x720 at 60 fps, is the binned readout with its vertical
+  window cut to 1464 array rows, which is what makes a frame short
+  enough for 60 fps. It therefore sees the full width but about
+  three quarters of the height: a 16:9 crop of the same scene, not a
+  scaled version of it.
 - Group hold uses one of the sensor's four register groups, so an
   exposure update (three byte writes) reaches the sensor whole instead
   of straddling a frame boundary. Verified by reading 0x3500-0x3502 off
