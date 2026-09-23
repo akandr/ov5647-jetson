@@ -113,7 +113,12 @@ echo "== frame rate"
 # One stream throughout: v4l2-ctl prints '<' per frame, so counting those
 # characters over a fixed window gives the rate the sensor really delivers.
 rm -f "$TMP/f.txt"; : > "$TMP/f.txt"
-v4l2-ctl -d "$DEV" --set-ctrl frame_rate=30000000 >/dev/null 2>&1
+# Park the control at the bottom of its range first. The framework skips a
+# write that does not change the stored value, so priming it at 30 would
+# make the first measurement below a no-op: the sensor would still be
+# running the mode table's own frame length, and the test would report
+# whatever that is as the rate it asked for.
+v4l2-ctl -d "$DEV" --set-ctrl frame_rate=2000000 >/dev/null 2>&1
 stdbuf -o0 timeout 60 v4l2-ctl -d "$DEV" --stream-mmap --stream-count=1200 \
 	> "$TMP/f.txt" 2>&1 &
 stream_pid=$!
