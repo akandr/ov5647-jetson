@@ -182,6 +182,7 @@ check_raw 0 2592 1944
 check_raw 1 1920 1080
 check_raw 2 1296 972
 check_raw 3 640 480
+check_raw 4 1280 720
 
 if [ -z "$RAW_ONLY" ] && command -v gst-launch-1.0 >/dev/null; then
 	systemctl start nvargus-daemon 2>/dev/null
@@ -190,6 +191,7 @@ if [ -z "$RAW_ONLY" ] && command -v gst-launch-1.0 >/dev/null; then
 	check_argus 1 1920 1080 30
 	check_argus 2 1296 972 30
 	check_argus 3 640 480 62
+	check_argus 4 1280 720 60
 	# Leave the board usable: the raw path is dead until the driver is
 	# rebound, so a second run of this script would otherwise fail.
 	systemctl stop nvargus-daemon 2>/dev/null

@@ -110,6 +110,7 @@ static const u32 ov5647_min_vts[] = {
 	[OV5647_MODE_1920x1080_30FPS] = 1104,
 	[OV5647_MODE_1296x972_30FPS] = 1435,
 	[OV5647_MODE_640x480_62FPS] = 504,
+	[OV5647_MODE_1280x720_60FPS] = 769,
 };
 
 static const struct of_device_id ov5647_of_match[] = {

@@ -230,10 +230,10 @@
 								min_hdr_ratio = "1";
 								max_hdr_ratio = "1";
 								min_framerate = "2000000";
-								max_framerate = "30000000";
+								max_framerate = "32800000";
 								step_framerate = "1";
 								default_framerate = "30000000";
-								min_exp_time = "119";
+								min_exp_time = "111";
 								max_exp_time = "500000";
 								step_exp_time = "1";
 								default_exp_time = "16666";
@@ -271,10 +271,10 @@
 								min_hdr_ratio = "1";
 								max_hdr_ratio = "1";
 								min_framerate = "2000000";
-								max_framerate = "30000000";
+								max_framerate = "32160000";
 								step_framerate = "1";
 								default_framerate = "30000000";
-								min_exp_time = "93";
+								min_exp_time = "87";
 								max_exp_time = "500000";
 								step_exp_time = "1";
 								default_exp_time = "16666";
@@ -322,6 +322,48 @@
 
 								embedded_metadata_height = "0";
 							};
+							mode4 { /* OV5647_MODE_1280x720_60FPS */
+								mclk_khz = "25000";
+								num_lanes = "2";
+								tegra_sinterface = "serial_b";
+								lane_polarity = "6";
+								phy_mode = "DPHY";
+								discontinuous_clk = "no";
+								dpcm_enable = "false";
+								cil_settletime = "0";
+
+								active_w = "1280";
+								active_h = "720";
+								mode_type = "bayer";
+								pixel_phase = "bggr";
+								csi_pixel_bit_depth = "10";
+								readout_orientation = "0";
+								line_length = "1896";
+								inherent_gain = "1";
+								mclk_multiplier = "3.50";
+								pix_clk_hz = "87500000";
+
+								gain_factor = "16";
+								framerate_factor = "1000000";
+								exposure_factor = "1000000";
+								min_gain_val = "16";
+								max_gain_val = "1023";
+								step_gain_val = "1";
+								default_gain = "16";
+								min_hdr_ratio = "1";
+								max_hdr_ratio = "1";
+								min_framerate = "2000000";
+								max_framerate = "60000000";
+								step_framerate = "1";
+								default_framerate = "60000000";
+								min_exp_time = "87";
+								max_exp_time = "500000";
+								step_exp_time = "1";
+								default_exp_time = "16666";
+
+								embedded_metadata_height = "0";
+							};
+
 
 							ports {
 								#address-cells = <1>;
