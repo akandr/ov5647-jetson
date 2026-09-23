@@ -47,7 +47,7 @@ survey, with what each project did and did not do, is in
 | Jetson Nano 2GB (P3448-0003) | R32.7.6 / JetPack 4.6.6 | working, verified on hardware |
 | Jetson Nano 4GB (P3448-0000) | R32.7.x | untested, overlay symbols need checking |
 | Jetson Xavier NX devkit (P3668) | R35.x / JetPack 5 | working, verified on hardware |
-| Jetson Orin Nano/NX devkit (P3767) | JetPack 7 / L4T r39 | installer runs, board boots the merged DTB and the sensor node comes up on I2C; with no camera attached the probe stops at the chip-ID read |
+| Jetson Orin Nano/NX devkit (P3767) | JetPack 7 / L4T r39 | sensors detected and bound, one or two at a time, each with its own video node; no frames yet, see Known limitations |
 
 ## Status
 
@@ -58,15 +58,16 @@ survey, with what each project did and did not do, is in
       exact rates the timings produce)
 - [x] Raw V4L2 Bayer capture, all five modes
 - [x] Module identity from the sensor's OTP memory, as `otp_data`
-- [x] Hardware ISP via `nvarguscamerasrc`, all five modes; a
-      900-frame 1080p run reports no dropped buffers
+- [x] Hardware ISP via `nvarguscamerasrc`, all five modes on R32 and
+      R35; a 900-frame 1080p run reports no dropped buffers. JetPack 7
+      needs a tuning file this sensor has none of, see Known limitations
 - [x] Builds on R32 (4.9), R35 (5.10), JetPack 7 / r39 (6.8); each
-      board boots its merged DTB and probes the sensor node. The 4.9
-      and 5.10 boards are verified with a camera attached; on the 6.8
-      board the probe stops at the I2C read, for want of a camera.
+      board boots its merged DTB and probes the sensor node, with a
+      camera attached on all three.
 - [x] Camera-attached test on Xavier NX: all five modes raw and
       through the ISP, same driver and overlay as committed
-- [ ] Camera-attached test on Orin (needs a 15-to-22-pin adapter ribbon)
+- [x] Camera-attached test on Orin: two sensors detected and bound,
+      no frames on either capture path yet
 - [ ] ISP color tuning file (camera_overrides.isp)
 - [x] Prebuilt release artifacts (.ko, .dtbo, source tarball), with a
       manifest naming the kernel each module was built for
@@ -249,9 +250,10 @@ empty.
 
 ## Install
 
-The camera goes in the CAM0 connector. The overlays wire that port
-only, so a camera on CAM1 produces no frames. Orin devkits have 22-pin
-connectors and need a 15-to-22-pin adapter ribbon.
+The camera goes in the CAM0 connector. Boards with two connectors can
+take a second one; pass --dual to install the two-camera overlay
+instead. Orin devkits have 22-pin connectors and need a 15-to-22-pin
+adapter ribbon.
 
 On the board:
 
@@ -567,8 +569,20 @@ once:
   of straddling a frame boundary. Verified by reading 0x3500-0x3502 off
   the I2C bus while streaming: writes made under the hold do not appear
   until the group is launched, and the image only changes then.
-- Orin support is build- and overlay-verified but has not yet seen a
-  camera (15-to-22-pin adapter ribbon required).
+- The Orin delivers no frames on either path, though both sensors are
+  detected and bound and each gets a video node. Two separate causes,
+  both outside this driver:
+
+  Argus on JetPack 7 requires a per-module NITO tuning file and refuses
+  to initialise without one. No such file exists for this sensor, and
+  the one shipped for the IMX219 is rejected rather than used as an
+  approximation. On R32 and R35 a default tuning applies instead, which
+  is why the same driver reaches the ISP there.
+
+  The raw path times out in the VI with `uncorr_err: request timed out
+  after 2500 ms`, with the sensor streaming and its registers correct.
+  Unbinding and rebinding the driver, which recovers the raw path on R32
+  and R35, does not help here.
 - Nano 4GB (P3448-0000) should work but its overlay symbols are
   unverified; the installer rejects it rather than guess.
 
