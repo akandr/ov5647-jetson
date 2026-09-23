@@ -54,8 +54,12 @@ fi
 # driver is rebound: the sensor still streams, but the VI channel stops
 # handing frames over. Rebinding rebuilds the channel, no reboot needed.
 recover_sensor() {
-	local drv=/sys/bus/i2c/drivers/ov5647 dev
-	dev=$(ls "$drv" 2>/dev/null | grep -E '^[0-9]+-[0-9a-f]+$' | head -1)
+	local drv=/sys/bus/i2c/drivers/ov5647 dev='' path
+	# the bound device is the one entry named <bus>-<addr>; the rest of
+	# the directory is the driver's own bind, unbind and uevent files
+	for path in "$drv"/[0-9]*-[0-9a-f]*; do
+		[ -e "$path" ] && { dev=${path##*/}; break; }
+	done
 	[ -n "$dev" ] || return 1
 	echo "$dev" > "$drv/unbind" 2>/dev/null || return 1
 	sleep 2
