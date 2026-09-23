@@ -1,0 +1,88 @@
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026 Artur Andrzejczak <andrzejczak.artur@gmail.com>
+#
+# Builds the driver against all three supported L4T lines without touching a
+# board. The headers come from NVIDIA's apt repository, so the weekly run is
+# the point as much as the per-push one: it builds against whatever NVIDIA
+# shipped that week and fails when their camera framework moves under us.
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Mondays, 04:00 UTC. L4T package updates land irregularly; this is what
+    # turns "it built in August" into "it still builds".
+    - cron: '0 4 * * 1'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  module:
+    # aarch64 runners: NVIDIA ships the kernel host tools in those packages as
+    # aarch64 binaries, so building natively avoids rebuilding them first.
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - board: nano
+            line: L4T R32.7 / kernel 4.9
+          - board: xavier
+            line: L4T R35.6 / kernel 5.10
+          - board: orin
+            line: JetPack 7 / L4T r39.2 / kernel 6.8
+    name: ${{ matrix.board }} (${{ matrix.line }})
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build tools
+        run: |
+          sudo apt-get update -qq
+          # bc, flex and bison are only needed if the kernel build decides to
+          # rebuild a host tool; the header packages normally ship them prebuilt
+          sudo apt-get install -y --no-install-recommends \
+            build-essential bc kmod flex bison libssl-dev libelf-dev
+      - name: Build against the L4T headers
+        run: ./.github/scripts/build-l4t.sh ${{ matrix.board }}
+      - name: Report what it built
+        run: modinfo .l4t-build/build-${{ matrix.board }}/ov5647.ko | head -12
+      - uses: actions/upload-artifact@v4
+        with:
+          # A compile check, not a release artifact: releases are built on the
+          # boards, against the kernel the module is going to be loaded into.
+          name: ov5647-${{ matrix.board }}-ci
+          path: .l4t-build/build-${{ matrix.board }}/ov5647.ko
+          retention-days: 7
+
+  overlays:
+    name: device tree overlays
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends device-tree-compiler
+      - name: Compile every overlay
+        run: |
+          rc=0
+          for dts in dt/*/*.dts; do
+              out=$(mktemp --suffix=.dtbo)
+              # -@ keeps the symbol table an overlay needs to resolve
+              # phandles against the board's own tree at merge time
+              if dtc -@ -I dts -O dtb -o "$out" "$dts" 2>"$out.err"; then
+                  echo "ok   $dts -> $(stat -c%s "$out") bytes"
+              else
+                  echo "FAIL $dts"; cat "$out.err"; rc=1
+              fi
+          done
+          exit $rc
+
+  shell:
+    name: shell scripts
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends shellcheck
+      - run: shellcheck -S warning install.sh tests/*.sh .github/scripts/*.sh

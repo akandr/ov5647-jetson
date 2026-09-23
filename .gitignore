@@ -8,3 +8,4 @@ modules.order
 *.dtbo
 *.dtb
 build/
+.l4t-build/
