@@ -32,11 +32,14 @@ cd "$(dirname "$0")"
 [ "$(id -u)" = 0 ] || { echo "ERROR: run with sudo" >&2; exit 1; }
 
 UNINSTALL=""
-case "${1:-}" in
-"")		;;
---uninstall)	UNINSTALL=1 ;;
-*)		echo "usage: $0 [--uninstall]" >&2; exit 2 ;;
-esac
+DUAL=""
+for arg in "$@"; do
+	case "$arg" in
+	--uninstall)	UNINSTALL=1 ;;
+	--dual)		DUAL=1 ;;
+	*)		echo "usage: $0 [--dual] [--uninstall]" >&2; exit 2 ;;
+	esac
+done
 
 echo "== detect board =="
 model=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || true)
@@ -112,6 +115,20 @@ case "$compat" in
 		echo "ERROR: unsupported board (compatible: $compat)" >&2; exit 1 ;;
 esac
 echo "board type: $BOARD"
+
+# The two-camera overlays sit next to the one-camera ones and differ only
+# in the file name, so the board detection above stays untouched. Boards
+# with one connector have no such file and say so rather than falling
+# back to a single camera the caller did not ask for.
+if [ -n "$DUAL" ]; then
+	DUAL_DTS=${DTS%-overlay.dts}-dual-overlay.dts
+	[ -r "$DUAL_DTS" ] || {
+		echo "ERROR: no two-camera overlay for $BOARD ($DUAL_DTS)" >&2
+		exit 1
+	}
+	DTS=$DUAL_DTS
+	echo "using the two-camera overlay"
+fi
 
 KVER=$(uname -r)
 
