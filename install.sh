@@ -53,7 +53,12 @@ BASE_SRC=/boot/kernel-ov5647-base.src
 # The entry that boots is the one DEFAULT names; with no DEFAULT, extlinux
 # takes the first LABEL. Scope both the read below and the write later on to
 # that one entry, so a second LABEL carrying its own FDT is left alone.
-LABEL=$(sed -n 's/^[[:space:]]*DEFAULT[[:space:]]\+\([^[:space:]]*\).*/\1/p' "$EXT" | head -1)
+#
+# One process, not a pipeline: under `set -e` with pipefail, a producer cut
+# short by whatever ends the pipeline early dies of SIGPIPE, and the
+# assignment then aborts the installer before it has printed anything at
+# all. awk exits on the first match by itself and has nobody to race.
+LABEL=$(awk '$1 == "DEFAULT" { print $2; exit }' "$EXT")
 entry_awk='
 	function indent(s) { match(s, /^[ \t]*/); return substr(s, 1, RLENGTH) }
 	function pick(line,   lbl) {

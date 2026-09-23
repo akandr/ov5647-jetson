@@ -38,7 +38,7 @@ check_raw() { # mode width height
 	v4l2-ctl -d "$DEV" --set-ctrl sensor_mode="$mode" >/dev/null 2>&1
 	local err
 	if ! err=$(v4l2-ctl -d "$DEV" --set-fmt-video=width="$w",height="$h",pixelformat=$FMT 2>&1); then
-		if echo "$err" | grep -qi busy; then
+		if [ "$(printf '%s' "$err" | grep -ci busy)" -gt 0 ]; then
 			# fuser lists nothing for another user's process unless we are
 			# root, so a busy device can look like it has no owner at all.
 			echo "FAIL $name: $DEV is busy, another process still has it open" \
@@ -106,7 +106,7 @@ check_argus() { # mode width height fps
 	local mode=$1 w=$2 h=$3 fps=$4 out
 	out=$(timeout 60 gst-launch-1.0 -q nvarguscamerasrc sensor-mode="$mode" num-buffers=10 \
 		! "video/x-raw(memory:NVMM),width=$w,height=$h,framerate=$fps/1" ! fakesink 2>&1)
-	if echo "$out" | grep -qiE 'error|fail'; then
+	if [ "$(printf '%s' "$out" | grep -ciE 'error|fail')" -gt 0 ]; then
 		echo "FAIL argus mode$mode ${w}x${h}@$fps: $(echo "$out" | grep -im1 -E 'error|fail')"
 		fail=1
 	else
