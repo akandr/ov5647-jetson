@@ -102,15 +102,23 @@ check_raw() { # mode width height
 # Argus refuses the stream. Only R32 names the cause, as "Frame Rate specified
 # is greater than supported"; R35 reports NvBufSurfaceFromFd failing instead,
 # which points at buffers rather than at the rate.
+# Count the buffers that arrive rather than grepping the log for trouble.
+# A missing plugin makes gst-launch say "erroneous pipeline", which holds
+# no "error" and no "fail", so a word search called that a pass and
+# reported five working ISP modes on a board with no Argus plugin at all.
 check_argus() { # mode width height fps
-	local mode=$1 w=$2 h=$3 fps=$4 out
-	out=$(timeout 60 gst-launch-1.0 -q nvarguscamerasrc sensor-mode="$mode" num-buffers=10 \
-		! "video/x-raw(memory:NVMM),width=$w,height=$h,framerate=$fps/1" ! fakesink 2>&1)
-	if [ "$(printf '%s' "$out" | grep -ciE 'error|fail')" -gt 0 ]; then
-		echo "FAIL argus mode$mode ${w}x${h}@$fps: $(echo "$out" | grep -im1 -E 'error|fail')"
+	local mode=$1 w=$2 h=$3 fps=$4 out rc got
+	out=$(timeout 60 gst-launch-1.0 -v nvarguscamerasrc sensor-mode="$mode" num-buffers=10 \
+		! "video/x-raw(memory:NVMM),width=$w,height=$h,framerate=$fps/1" \
+		! fakesink silent=false 2>&1)
+	rc=$?
+	got=$(printf '%s' "$out" | grep -c 'chain.*fakesink')
+	if [ "$rc" != 0 ] || [ "$got" -lt 10 ]; then
+		echo "FAIL argus mode$mode ${w}x${h}@$fps: $got/10 frames, gst exited $rc"
+		printf '%s' "$out" | grep -iE 'error|erroneous|fail|not-negotiated' | head -1 | sed 's/^/    /'
 		fail=1
 	else
-		echo "PASS argus mode$mode ${w}x${h}@$fps"
+		echo "PASS argus mode$mode ${w}x${h}@$fps: $got frames"
 	fi
 }
 
