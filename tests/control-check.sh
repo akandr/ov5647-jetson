@@ -235,5 +235,26 @@ else
 	fi
 fi
 
+# The module's identity comes out of the sensor's one-time programmable
+# memory, which is loaded once at probe. It has failed silently before, as
+# a buffer of zeroes, because the load needs the sensor's internal clock
+# and gets nothing while it sits in standby. Zeroes are therefore the
+# failure this checks for, not a value anyone can predict.
+echo "== module identity"
+# v4l2-ctl prints a string control quoted: otp_data: 'e80cca...'
+otp=$(v4l2-ctl -d "$DEV" --get-ctrl otp_data 2>/dev/null |
+	sed "s/^otp_data: //; s/^'//; s/'$//")
+if [ -z "$otp" ]; then
+	echo "SKIP module identity: no otp_data control on this build"
+elif [ "$(printf '%s' "$otp" | grep -cE '^[0-9a-f]{64}$')" -eq 0 ]; then
+	echo "FAIL module identity: otp_data is '$otp', not 64 hex digits"
+	fail=1
+elif [ "$(printf '%s' "$otp" | grep -cE '^0{64}$')" -gt 0 ]; then
+	echo "FAIL module identity: OTP read back as all zeroes, the load did not run"
+	fail=1
+else
+	echo "PASS module identity: $otp"
+fi
+
 [ "$fail" = 0 ] && echo "ALL CONTROL CHECKS PASSED" || echo "SOME CONTROL CHECKS FAILED"
 exit $fail
