@@ -98,11 +98,11 @@ if [ -f "$NVPUB/include/media/tegracam_core.h" ]; then
 	# The symlink holds an absolute path, so read it against the sysroot.
 	KDIR=$SYS$(readlink "$SYS/lib/modules/$KVER/build" 2>/dev/null)
 	[ -d "$KDIR" ] || { echo "ERROR: no kernel build tree for $KVER" >&2; exit 1; }
-	set -- KVER="$KVER" KDIR="$KDIR" NVPUB="$NVPUB"
+	set -- KVER="$KVER" KDIR="$KDIR" NVPUB="$NVPUB" KBUILD_EXTRA_WARN=1
 else
 	# R32/R35 keep both under one directory. NVPUB is pointed away so a
 	# host with JetPack 7 headers installed still takes this branch.
-	set -- KVER="$KVER" HDRS="$HDRS" NVPUB=/nonexistent
+	set -- KVER="$KVER" HDRS="$HDRS" NVPUB=/nonexistent KBUILD_EXTRA_WARN=1
 fi
 
 LOG=$BUILD/build.log
@@ -120,6 +120,14 @@ if grep -qiE 'undefined|no symbol version' "$LOG"; then
 	exit 1
 fi
 
+# Extra warnings fire freely in NVIDIA's headers, so only warnings
+# naming a file from driver/ count.
+ours=$(grep -i 'warning' "$LOG" | grep -E 'ov5647\.c|ov5647_mode_tbls\.h|conftest\.h' || true)
+if [ -n "$ours" ]; then
+	echo "FAIL $BOARD: the compiler warned about this driver's own sources" >&2
+	printf '%s\n' "$ours" >&2
+	exit 1
+fi
 
 got=$(modinfo -F vermagic "$BUILD/ov5647.ko")
 case $got in
