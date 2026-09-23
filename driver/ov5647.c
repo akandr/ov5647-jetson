@@ -78,7 +78,10 @@
  * module identification, read out through a 32-byte buffer.
  */
 #define OV5647_OTP_SIZE			32
-#define OV5647_OTP_STR_SIZE		(OV5647_OTP_SIZE * 2 + 1)
+/* Maximum length, without the terminator the control core adds. An odd
+ * length fails v4l2-compliance, which expects a step of two here.
+ */
+#define OV5647_OTP_STR_SIZE		(OV5647_OTP_SIZE * 2)
 #define OV5647_REG_GROUP_ACCESS		0x3208
 #define OV5647_GROUP_CTRL		GENMASK(7, 4)
 #define OV5647_GROUP_CTRL_ENTER		0x0
