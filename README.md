@@ -1,5 +1,7 @@
 # OV5647 (Raspberry Pi Camera v1) driver for NVIDIA Jetson
 
+[![build](https://github.com/akandr/ov5647-jetson/actions/workflows/build.yml/badge.svg)](https://github.com/akandr/ov5647-jetson/actions/workflows/build.yml)
+
 ISP-integrated driver for the OmniVision OV5647 sensor (Raspberry Pi
 Camera Module v1) on NVIDIA Jetson boards. One driver source builds on
 L4T R32, R35 and JetPack 7 (kernels 4.9, 5.10, 6.8); the installer
@@ -314,6 +316,57 @@ written, and both look like driver bugs when you hit them:
 - Every stream start rewrites the frame length from the mode table, so
   a frame rate set for one stream is gone by the next. Measuring the
   rate therefore only works within a single continuous stream.
+- Writing a control its current value does nothing at all. The framework
+  drops a write that does not change the stored value, so a second
+  measurement asking for the same exposure as the first silently runs on
+  whatever the sensor was already doing. Sweeps have to step through
+  values that actually differ, or park the control elsewhere first.
+
+### What CI covers, and what it cannot
+
+Those two scripts need a board and a camera. The build does not: NVIDIA
+publishes the kernel headers for every supported L4T line as ordinary
+`.deb` packages, so `.github/scripts/build-l4t.sh <nano|xavier|orin>`
+fetches the newest headers for that line, unpacks them into a throwaway
+sysroot and builds the module against them. Any aarch64 Linux box can
+run it; no Jetson is involved.
+
+That is what the workflow does on every push and again every Monday,
+across all three lines. The weekly run is the one that earns its keep:
+the driver sits on NVIDIA's out-of-tree tegracam framework, whose
+headers and exported symbols move with each L4T release, and a build
+against last year's headers proves nothing about this year's. Linking
+is checked too, since each line's `Module.symvers` carries the tegracam
+symbols, so a function that disappears fails the build rather than the
+next `insmod`.
+
+What it cannot do is tell you the driver works. No frame passes through
+CI. Streaming, controls, orientation and the ISP path are proven only by
+the scripts above, on a board with a camera on the ribbon.
+
+### v4l2-compliance
+
+The standard conformance suite runs clean on the driver's own surface and
+fails only where the VI layer below it does. On both boards, after
+`sudo systemctl stop nvargus-daemon`:
+
+    v4l2-compliance -d /dev/video0        # Nano 42/43, Xavier 43/45
+    v4l2-compliance -d /dev/video0 -s     # Nano 42/46, Xavier 44/52
+
+No warnings on either. Every failure is in NVIDIA's VI channel, not in
+the sensor driver, and is the same on R32 and R35:
+
+- `VIDIOC_G/S_PARM` is not implemented, although the same channel does
+  answer `VIDIOC_ENUM_FRAMEINTERVALS` from the driver's mode table. Frame
+  rate on this stack is the `frame_rate` control instead.
+- `VIDIOC_CREATE_BUFS` returns EINVAL, which also fails the MMAP tests
+  that use it; ordinary `REQBUFS` streaming is unaffected.
+- `read()` and USERPTR buffers are not supported; the channel is
+  MMAP and DMABUF only.
+
+Those are worth knowing before porting an application: anything reaching
+for `S_PARM`, `read()` or user pointers has to be written differently
+here, whatever sensor is attached.
 
 ## Control ranges in practice
 
@@ -528,6 +581,7 @@ once:
     dt/orin/    DT overlay, Orin Nano/NX devkit (JetPack 7)
     tests/      on-board checks: capture geometry and content, controls
     docs/       prior art survey, first-light and ISP captures
+    .github/    CI: builds against all three L4T lines, no board needed
 
 ## Provenance and licensing
 
