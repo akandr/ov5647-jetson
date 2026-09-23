@@ -1018,6 +1018,9 @@ static int ov5647_set_mode(struct tegracam_device *tc_dev)
 {
 	struct ov5647 *priv = (struct ov5647 *)tegracam_get_privdata(tc_dev);
 	struct camera_common_data *s_data = tc_dev->s_data;
+	const struct sensor_mode_properties *mode =
+		&s_data->sensor_props.sensor_modes[s_data->mode_prop_idx];
+	s64 rate = mode->control_properties.default_framerate;
 	u32 vts;
 	int err = 0;
 
@@ -1025,16 +1028,29 @@ static int ov5647_set_mode(struct tegracam_device *tc_dev)
 	if (err)
 		return err;
 
-	/* The register tables (from mainline) leave VTS at the sensor reset
-	 * default; program the mode's nominal frame length explicitly. */
-	vts = ov5647_min_vts[s_data->mode];
-	err = ov5647_write_reg(s_data, OV5647_REG_VTS_HI, (vts >> 8) & 0xff);
-	if (!err)
-		err = ov5647_write_reg(s_data, OV5647_REG_VTS_LO, vts & 0xff);
+	/* The register tables leave VTS at the sensor reset default, so
+	 * program the frame length here. With override_enable clear the
+	 * framework applies no stored controls at stream start, so use the
+	 * rate the device tree advertises; otherwise a capture that asks for
+	 * nothing runs at the mode's shortest frame.
+	 */
+	if (rate) {
+		err = ov5647_set_frame_rate(tc_dev, rate);
+	} else {
+		/* No default rate in the tree. The shortest frame is the
+		 * one value known to be valid for the mode.
+		 */
+		vts = ov5647_min_vts[s_data->mode];
+		err = ov5647_write_reg(s_data, OV5647_REG_VTS_HI,
+				       (vts >> 8) & 0xff);
+		if (!err)
+			err = ov5647_write_reg(s_data, OV5647_REG_VTS_LO,
+					       vts & 0xff);
+		if (!err)
+			priv->frame_length = vts;
+	}
 	if (err)
 		return err;
-
-	priv->frame_length = vts;
 
 	return ov5647_set_orientation(tc_dev);
 }
