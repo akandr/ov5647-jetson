@@ -39,7 +39,11 @@
  * &cam_i2c (i2c mux).
  *
  * Carry the per-connector values above into any mode added here: they
- * belong to the carrier's wiring, not to the sensor.
+ * belong to the carrier's wiring, not to the sensor. Both connectors
+ * capture with them.
+ *
+ * discontinuous_clk is "yes" on both sensors, as in the single-camera
+ * overlay, which says why.
  */
 
 / {
@@ -226,7 +230,7 @@
 								tegra_sinterface = "serial_b";
 								lane_polarity = "6";
 								phy_mode = "DPHY";
-								discontinuous_clk = "no";
+								discontinuous_clk = "yes";
 								dpcm_enable = "false";
 								cil_settletime = "0";
 
@@ -267,7 +271,7 @@
 								tegra_sinterface = "serial_b";
 								lane_polarity = "6";
 								phy_mode = "DPHY";
-								discontinuous_clk = "no";
+								discontinuous_clk = "yes";
 								dpcm_enable = "false";
 								cil_settletime = "0";
 
@@ -308,7 +312,7 @@
 								tegra_sinterface = "serial_b";
 								lane_polarity = "6";
 								phy_mode = "DPHY";
-								discontinuous_clk = "no";
+								discontinuous_clk = "yes";
 								dpcm_enable = "false";
 								cil_settletime = "0";
 
@@ -349,7 +353,7 @@
 								tegra_sinterface = "serial_b";
 								lane_polarity = "6";
 								phy_mode = "DPHY";
-								discontinuous_clk = "no";
+								discontinuous_clk = "yes";
 								dpcm_enable = "false";
 								cil_settletime = "0";
 
@@ -390,7 +394,7 @@
 								tegra_sinterface = "serial_b";
 								lane_polarity = "6";
 								phy_mode = "DPHY";
-								discontinuous_clk = "no";
+								discontinuous_clk = "yes";
 								dpcm_enable = "false";
 								cil_settletime = "0";
 
@@ -472,7 +476,7 @@
 								num_lanes = "2";
 								tegra_sinterface = "serial_c";
 								phy_mode = "DPHY";
-								discontinuous_clk = "no";
+								discontinuous_clk = "yes";
 								dpcm_enable = "false";
 								cil_settletime = "0";
 
@@ -512,7 +516,7 @@
 								num_lanes = "2";
 								tegra_sinterface = "serial_c";
 								phy_mode = "DPHY";
-								discontinuous_clk = "no";
+								discontinuous_clk = "yes";
 								dpcm_enable = "false";
 								cil_settletime = "0";
 
@@ -552,7 +556,7 @@
 								num_lanes = "2";
 								tegra_sinterface = "serial_c";
 								phy_mode = "DPHY";
-								discontinuous_clk = "no";
+								discontinuous_clk = "yes";
 								dpcm_enable = "false";
 								cil_settletime = "0";
 
@@ -592,7 +596,7 @@
 								num_lanes = "2";
 								tegra_sinterface = "serial_c";
 								phy_mode = "DPHY";
-								discontinuous_clk = "no";
+								discontinuous_clk = "yes";
 								dpcm_enable = "false";
 								cil_settletime = "0";
 
@@ -632,7 +636,7 @@
 								num_lanes = "2";
 								tegra_sinterface = "serial_c";
 								phy_mode = "DPHY";
-								discontinuous_clk = "no";
+								discontinuous_clk = "yes";
 								dpcm_enable = "false";
 								cil_settletime = "0";
 

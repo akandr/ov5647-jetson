@@ -23,6 +23,9 @@
  *  - adds the OV5647 node on cam i2c (bus 6, addr 0x36), PWDN on gpio 151
  *  - rewires the NVCSI channel 0 input endpoint to the OV5647
  *  - repoints tegra-camera-platform module0 at the new sensor
+ *
+ * discontinuous_clk is "no": the sensor keeps its clock lane running
+ * (0x4800 = 0x04) and this receiver captures nothing when told "yes".
  */
 
 / {

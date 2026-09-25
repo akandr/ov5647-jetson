@@ -35,6 +35,8 @@
  *
  * Note serial_c, not serial_b: on this carrier the second connector is
  * wired to the third CSI brick. Neither connector sets lane_polarity.
+ * discontinuous_clk is "no" on both, as in the single-camera overlay,
+ * which says why.
  *
  * Merge offline with fdtoverlay onto the flashed DTB, or apply via the
  * extlinux FDT line. Sensor timing values are identical to the Nano

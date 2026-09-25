@@ -28,8 +28,12 @@
  *
  * CAM0 on this carrier is CSI serial_b / port-index 1 with swapped lane
  * polarity (lane_polarity = "6"), both taken from NVIDIA's overlay for
- * this connector rather than measured, since no camera has been on this
- * board yet. Carry them into any mode added here.
+ * this connector, and a camera captures with them. Carry them into any
+ * mode added here.
+ *
+ * discontinuous_clk is "yes" although the sensor drives a continuous
+ * clock. With "no" the T234 receiver never
+ * locks and delivers no frame; the Nano needs "no" for the same sensor.
  */
 
 / {
@@ -164,7 +168,7 @@
 								tegra_sinterface = "serial_b";
 								lane_polarity = "6";
 								phy_mode = "DPHY";
-								discontinuous_clk = "no";
+								discontinuous_clk = "yes";
 								dpcm_enable = "false";
 								cil_settletime = "0";
 
@@ -205,7 +209,7 @@
 								tegra_sinterface = "serial_b";
 								lane_polarity = "6";
 								phy_mode = "DPHY";
-								discontinuous_clk = "no";
+								discontinuous_clk = "yes";
 								dpcm_enable = "false";
 								cil_settletime = "0";
 
@@ -246,7 +250,7 @@
 								tegra_sinterface = "serial_b";
 								lane_polarity = "6";
 								phy_mode = "DPHY";
-								discontinuous_clk = "no";
+								discontinuous_clk = "yes";
 								dpcm_enable = "false";
 								cil_settletime = "0";
 
@@ -287,7 +291,7 @@
 								tegra_sinterface = "serial_b";
 								lane_polarity = "6";
 								phy_mode = "DPHY";
-								discontinuous_clk = "no";
+								discontinuous_clk = "yes";
 								dpcm_enable = "false";
 								cil_settletime = "0";
 
@@ -328,7 +332,7 @@
 								tegra_sinterface = "serial_b";
 								lane_polarity = "6";
 								phy_mode = "DPHY";
-								discontinuous_clk = "no";
+								discontinuous_clk = "yes";
 								dpcm_enable = "false";
 								cil_settletime = "0";
 

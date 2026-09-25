@@ -25,6 +25,10 @@
  *  - repoints the NVCSI channel 0 input endpoint at the OV5647
  *  - rebadges tegra-camera-platform module0
  *
+ * discontinuous_clk is "no", which is what the sensor does. This
+ * receiver captures all five modes with "yes" as well; the Nano and the
+ * Orin each accept only one of the two.
+ *
  * Merge offline with fdtoverlay onto the flashed DTB, or apply via the
  * extlinux FDT line. Sensor timing values are identical to the Nano
  * overlay; mode properties use the R35 mode_type/pixel_phase schema
