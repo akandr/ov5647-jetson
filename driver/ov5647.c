@@ -532,6 +532,10 @@ static int ov5647_read_otp(struct ov5647 *priv)
 		if (!(val & OV5647_OTP_RD_BUSY))
 			break;
 	}
+	if (i == 20) {
+		err = -ETIMEDOUT;
+		goto out;
+	}
 
 	for (i = 0; i < OV5647_OTP_SIZE; i++) {
 		err = ov5647_read_reg(s_data, OV5647_REG_OTP_DATA + i,
@@ -543,6 +547,12 @@ static int ov5647_read_otp(struct ov5647 *priv)
 out:
 	ov5647_write_table(priv, ov5647_stop_stream);
 	regcache_cache_bypass(s_data->regmap, false);
+
+	/* Half an identity is worse than none: report zeroes, as for a blank
+	 * module.
+	 */
+	if (err)
+		memset(priv->otp, 0, sizeof(priv->otp));
 
 	return err;
 }
