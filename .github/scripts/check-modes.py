@@ -17,6 +17,16 @@ import sys
 from pathlib import Path
 
 
+# Measured per board. With this sensor's continuous clock the Nano
+# captures only with "no", the Orin only with "yes", and the Xavier NX
+# with either.
+ZEGAR = {"nano": "no", "orin": "yes"}
+
+# Pixel rate per step of the PLL multiplier (0x3036), with the dividers
+# every table uses. Taken from the rate measured at 0x69, 87.5 MHz.
+PIX_NA_KROK = 87500000 / 0x69
+
+
 def blad(msg):
     print("FAIL " + msg)
     sys.exit(1)
@@ -52,6 +62,17 @@ def tabele_rejestrow(tbls: str):
         for adr, val in re.findall(r"\{(0x[0-9a-fA-F]+),\s*(0x[0-9a-fA-F]+)\}", t.group(1)):
             regs[int(adr, 16)] = int(val, 16)   # last write wins, as on the wire
         out[name] = regs
+    return out
+
+
+def tabele_zapisy(tbls: str):
+    """enum name -> every (register, value) write of its table, in order."""
+    m = re.search(r"mode_table\[\] = \{\n(.*?)\n\};", tbls, re.S)
+    out = {}
+    for name, tabela in re.findall(r"\[(\w+)\]\s*=\s*(\w+)", m.group(1)):
+        t = re.search(r"%s\[\] = \{\n(.*?)\n\};" % re.escape(tabela), tbls, re.S)
+        out[name] = [(int(a, 16), int(v, 16)) for a, v in
+                     re.findall(r"\{(0x[0-9a-fA-F]+),\s*(0x[0-9a-fA-F]+)\}", t.group(1))]
     return out
 
 
@@ -123,6 +144,27 @@ def main():
     print("ok  every register table programs the output size frmfmt[] "
           "advertises")
 
+    # Holding the sensor's blocks in reset partway through a table, as
+    # mainline's 640x480 sequence does, leaves the Orin's receiver unable to
+    # lock on that mode. Streaming is started from its own table anyway.
+    for name, t in tabele_zapisy(tbls).items():
+        for adr, val in t:
+            if adr in (0x3000, 0x3001, 0x3002) and val != 0:
+                blad("%s writes 0x%02x to 0x%04x: a block reset inside a mode "
+                     "table stops the Orin capturing that mode" % (name, val, adr))
+    print("ok  no mode table resets the sensor's blocks partway through")
+
+    # pix_clk_hz is what the receiver's settle time and the framework's
+    # exposure maths are computed from. It follows the PLL multiplier as
+    # long as the dividers are the same everywhere, so a table whose PLL
+    # changes without the device tree following shows up here.
+    dzielniki = {(r.get(0x3034), r.get(0x3035), r.get(0x3037))
+                 for r in tabele.values()}
+    if len(dzielniki) != 1:
+        blad("the mode tables use different PLL dividers (0x3034, 0x3035, "
+             "0x3037): %s; extend this check before relying on it"
+             % sorted(dzielniki))
+
     for dts_path in sorted((korzen / "dt").glob("*/*.dts")):
         plyta = dts_path.parent.name
         czujn = czujniki(dts_path.read_text())
@@ -130,10 +172,23 @@ def main():
             blad("%s: no sensor node with modes found" % plyta)
         for nazwa, tryby in czujn:
             sprawdz_czujnik(plyta, nazwa, tryby, frmfmt, tabele)
+            sprawdz_zegar(plyta, nazwa, tryby)
         print("ok  %-7s %d sensor(s), %d modes each, geometry matches frmfmt[]"
               % (plyta, len(czujn), len(czujn[0][1])))
 
+    print("ok  discontinuous_clk is uniform per sensor and as measured per board")
     print("PASS modes agree between the driver and every overlay")
+
+
+def sprawdz_zegar(plyta, nazwa, tryby):
+    wartosci = {props.get("discontinuous_clk") for _, props in tryby}
+    if len(wartosci) != 1:
+        blad("%s %s: discontinuous_clk differs between modes: %s"
+             % (plyta, nazwa, ", ".join(sorted(map(str, wartosci)))))
+    wartosc = wartosci.pop()
+    if plyta in ZEGAR and wartosc != ZEGAR[plyta]:
+        blad('%s %s: discontinuous_clk is "%s", this board captures only '
+             'with "%s"' % (plyta, nazwa, wartosc, ZEGAR[plyta]))
 
 
 def sprawdz_czujnik(plyta, nazwa, tryby, frmfmt, tabele):
@@ -159,6 +214,15 @@ def sprawdz_czujnik(plyta, nazwa, tryby, frmfmt, tabele):
         if (dtw, dth) != (str(w), str(h)):
             blad("%s: mode%d is %sx%s but frmfmt[%d] (%s) is %dx%d"
                  % (plyta, n, dtw, dth, i, name, w, h))
+
+        mnoznik = tabele[name].get(0x3036)
+        if mnoznik:
+            na_krok = int(props["pix_clk_hz"]) / mnoznik
+            if abs(na_krok - PIX_NA_KROK) / PIX_NA_KROK > 1e-4:
+                blad("%s: mode%d declares pix_clk_hz %s, but %s sets the PLL "
+                     "multiplier to 0x%02x, which gives %.0f"
+                     % (plyta, n, props["pix_clk_hz"], name, mnoznik,
+                        PIX_NA_KROK * mnoznik))
 
         # The framework derives frame length from line_length, so a
         # value other than the programmed one skews every exposure.
