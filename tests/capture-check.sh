@@ -189,8 +189,10 @@ fi
 check_raw 0 2592 1944
 check_raw 1 1920 1080
 check_raw 2 1296 972
-check_raw 3 640 480
 check_raw 4 1280 720
+# Last: a failed capture in this mode once left the Orin's capture path stuck
+# until the board lost power, which fails every mode after it.
+check_raw 3 640 480
 
 if [ -z "$RAW_ONLY" ] && command -v gst-launch-1.0 >/dev/null; then
 	systemctl start nvargus-daemon 2>/dev/null
