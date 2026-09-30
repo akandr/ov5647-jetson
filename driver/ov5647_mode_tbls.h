@@ -3,8 +3,10 @@
  * ov5647_mode_tbls.h - OV5647 sensor mode tables for NVIDIA Tegra
  *
  * Copyright (C) 2026 Artur Andrzejczak <andrzejczak.artur@gmail.com>
- *   - Tegra adaptation: continuous MIPI clock, streaming driven from
- *     separate start and stop tables, wait entry after the soft reset
+ *   - Tegra adaptation: continuous MIPI clock, line length written
+ *     explicitly, streaming driven from separate start and stop tables,
+ *     wait entry after the soft reset, the 1280x720 table, and no
+ *     block reset in the middle of the 640x480 table
  * Copyright (C) 2016, Synopsys, Inc.
  *   - register sequences from mainline drivers/media/i2c/ov5647.c
  *     (GPL-2.0), driver by Ramiro Oliveira
@@ -425,9 +427,6 @@ static const ov5647_reg ov5647_mode_640x480_62fps[] = {
 	{0x5000, 0x06},
 	{0x5003, 0x08},
 	{0x5a00, 0x08},
-	{0x3000, 0xff},
-	{0x3001, 0xff},
-	{0x3002, 0xff},
 	{0x301d, 0xf0},
 	{0x3a18, 0x00},
 	{0x3a19, 0xf8},
