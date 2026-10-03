@@ -128,8 +128,9 @@ that keeps the matrix near identity:
 
 $$ M^* = \arg\min_M \frac{1}{18} \sum_{k=1}^{18} \Delta E_{76}\big(\mathrm{Lab}(M\,\mathbf{x}_k),\ \mathrm{Lab}_k\big) + \lambda \lVert M - I \rVert_F^2 $$
 
-λ is 0.1 indoors and 3 for daylight. The Xavier NX and the Orin Nano
-modules are fitted together. A saturation factor s is then folded in
+λ is 0.1 indoors and 3 for daylight. The two camera modules are
+fitted together, one on each board for the LED sources and both on the
+Xavier NX in daylight. A saturation factor s is then folded in
 with luma preserved:
 
 $$ M_s = \big((1-s)\,\mathbf{1}\mathbf{y}^\top + s I\big) M, \quad \mathbf{y} = (0.2126, 0.7152, 0.0722), \ s = 1.2 $$
@@ -148,6 +149,46 @@ linear, scaled so that N6.5 matches the reference and converted to
 Lab, and ΔE is computed per patch. This score includes the ISP's tone
 curve and sharpening, which the raw fit does not see, so it reads
 higher than the fit.
+
+## From the measurements to the file
+
+Nothing is written into a binary. `libnvscf.so` is only read: `strings`
+on it lists the generic tuning, with the key names and their defaults.
+The override is a plain text file with the same `key = value;` syntax.
+Argus reads it at start and applies it on top of the generic tuning.
+
+White points. For each source the fit gives the raw ratios R/G and B/G
+of a grey patch. For the LED sources they are the mean of the two
+modules, for daylight the shade measurement. These get the
+empirical correction (R x1.08, B x1.12) and are scaled so that the
+largest of R, G and B is 900. The result goes into
+`awb.v4.FusionLights[i] = {R, Gr, Gb, B}` with Gr equal to Gb. Source B
+as an example:
+
+    raw grey        R/G 0.90   B/G 0.69
+    corrected       R/G 0.972  B/G 0.773
+    scaled to 900   {875, 900, 900, 696}
+
+The generic tuning names its eight light slots after illuminants (CIE
+A, FL11, 6500 K, 2400 K, 5000 K, 8000 K, FL2, OSRAM). The warm source
+takes slots 0 and 3, the neutral one 1, 4 and 6, the cool one 2 and 7,
+and daylight slot 5. The R value for source C was later lowered by
+hand from 724 to 700 while chasing a green tint, with little effect.
+
+Clamps. `LowU` 0.05, `HighU` 4.0, `GrayLineThickness` 1.0 and
+`NumGrayLineSoftClampPoints` 0, written for both `awb.` and `awb.v4.`.
+4.0 and 1.0 are the largest values Argus accepts.
+
+Colour matrices. Each fitted matrix, with the saturation folded in,
+maps white-balanced camera RGB to linear sRGB. Its transpose fills
+`colorCorrection.set[i].ccMatrix[0..2]`, and `ccMatrix[3]` is the
+identity row `{0, 0, 0, 1}`. The sets carry the labels 3500 K (source
+A), 4500 K (B), 5500 K (C) and 8500 K (daylight), chosen by measuring
+ΔE.
+
+Each change was checked the same way: copy the file into place,
+delete `nvcam_cache_*.bin`, restart `nvargus-daemon`, check the log for
+rejected lines, capture the chart through the ISP and score the JPEG.
 
 ## Other measurements
 

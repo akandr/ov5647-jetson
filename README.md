@@ -20,7 +20,8 @@ after calibration with `isp/camera_overrides_noir.isp`.
 Outdoors the result is weaker. The modules used here are the NoIR
 variant and have no infrared cut filter, so foliage comes out pale and
 colourless with any tuning. The phone picture on the right is for
-scale. `docs/isp-tuning.md` has the measurements and the reasons.
+scale. [docs/isp-tuning.md](docs/isp-tuning.md) has the measurements
+and the reasons.
 
 ![A garden through the ISP, generic tuning and daylight override, next to a phone](docs/img/garden-comparison.jpg)
 
@@ -370,6 +371,31 @@ number 1. Both connectors give the same result.
 An application that uses `S_PARM`, `read()` or user pointers needs
 changes to run on this stack, with any sensor.
 
+## Colour on the ISP
+
+On R32 and R35 the ISP falls back to a generic tuning made for another
+sensor, and images come out magenta. `isp/camera_overrides_noir.isp`
+corrects white balance and colour for the NoIR module used here. It was
+fitted to a ColorChecker and checked on the Xavier NX ISP:
+
+| light source | generic tuning | with the override |
+|---|---|---|
+| warm LED | 41.7 | 17.9 |
+| neutral LED | 37.3 | 11.3 |
+| cool LED | 32.3 | 11.1 |
+
+The numbers are the mean ΔE over the chart's colour patches, lower is
+better. Outdoors the missing infrared filter limits what any tuning can
+do. To install the file:
+
+    sudo cp isp/camera_overrides_noir.isp /var/nvidia/nvcam/settings/camera_overrides.isp
+    sudo chmod 664 /var/nvidia/nvcam/settings/camera_overrides.isp
+    sudo rm -f /var/nvidia/nvcam/settings/nvcam_cache_*.bin
+    sudo systemctl restart nvargus-daemon
+
+[docs/isp-tuning.md](docs/isp-tuning.md) describes the measurements,
+the method, how the numbers become the file, and the limits.
+
 ## Control ranges in practice
 
 The current frame length limits exposure. At 30 fps the frame is 1435
@@ -542,14 +568,9 @@ Problems that took real debugging time:
 ## Known limitations
 
 - Without an override file the ISP uses a generic tuning made for
-  another sensor. Its AWB settles on that sensor's white and its colour
-  matrix is the identity, so images pull magenta and look washed out,
-  as the left half of the chart image above shows.
-  `isp/camera_overrides_noir.isp` corrects this for the NoIR module
-  under artificial light. `docs/isp-tuning.md` has the measurements,
-  the keys and the remaining problems. On R35 the ISP reads the
-  override from `/var/nvidia/nvcam/settings/camera_overrides.isp` after
-  `nvcam_cache_*.bin` there is deleted and `nvargus-daemon` restarted.
+  another sensor, and images pull magenta. The override file in `isp/`
+  is checked on R35 only and is untested outdoors. See Colour on the
+  ISP.
 - Raw V4L2 capture and Argus do not mix within one session. After an
   Argus pipeline the raw path delivers no frames until the sensor
   driver is rebound. This happens on both L4T generations while the
