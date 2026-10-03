@@ -84,6 +84,17 @@ fi
 FB=$(v4l2-ctl -d "$DEV" --get-fmt-video 2>/dev/null | awk '/Size Image/{print $4}')
 [ -n "$FB" ] && [ "$FB" != 0 ] || { echo "cannot read the frame size from $DEV"; exit 2; }
 
+# Control writes go in 1.2 s after streamon, so every stream that takes
+# one must outlast that at the mode's own rate: two seconds, at least 40
+# frames.
+fps_ctrl() { # default or max
+	v4l2-ctl -d "$DEV" -l 2>/dev/null | awk -v k="$1=" '/frame_rate/ {
+		for (i = 1; i <= NF; i++) if (index($i, k) == 1) { sub(k, "", $i); print int($i / 1000000) } }'
+}
+FPS=$(fps_ctrl default)
+MAXFPS=$(fps_ctrl max)
+N=$(( ${FPS:-30} * 2 > 40 ? ${FPS:-30} * 2 : 40 ))
+
 mean_of_last() { # file
 	python3 - "$1" "$FB" "$H" <<-'PY'
 	import sys, numpy as np
@@ -134,6 +145,10 @@ stdbuf -o0 timeout 60 v4l2-ctl -d "$DEV" --stream-mmap --stream-count=1200 \
 stream_pid=$!
 sleep 3
 for want in 30 15 5; do
+	if [ "$want" -gt "${MAXFPS:-30}" ]; then
+		echo "SKIP frame_rate $want fps: above this mode's ${MAXFPS} fps"
+		continue
+	fi
 	v4l2-ctl -d "$DEV" --set-ctrl frame_rate=$((want * 1000000)) >/dev/null 2>&1
 	sleep 1
 	a=$(tr -cd '<' < "$TMP/f.txt" | wc -c)
@@ -163,9 +178,9 @@ too_dark() { # lit black -> true when the difference is negligible
 }
 
 echo "== exposure"
-read -r dark _ _ <<<"$(probe "gain=16,exposure=93" 40)"
-read -r lo _ _ <<<"$(probe "gain=16,exposure=2000" 40)"
-read -r hi _ _ <<<"$(probe "gain=16,exposure=32000" 40)"
+read -r dark _ _ <<<"$(probe "gain=16,exposure=93" "$N")"
+read -r lo _ _ <<<"$(probe "gain=16,exposure=2000" "$N")"
+read -r hi _ _ <<<"$(probe "gain=16,exposure=32000" "$N")"
 if too_dark "$hi" "$dark"; then
 	echo "SKIP exposure: the scene is too dark to tell (mean $dark to $hi)"
 else
@@ -201,8 +216,8 @@ else
 fi
 
 echo "== gain"
-read -r g1 _ _ <<<"$(probe "exposure=2000,gain=16" 40)"
-read -r g2 _ _ <<<"$(probe "exposure=2000,gain=256" 40)"
+read -r g1 _ _ <<<"$(probe "exposure=2000,gain=16" "$N")"
+read -r g2 _ _ <<<"$(probe "exposure=2000,gain=256" "$N")"
 if too_dark "$g2" "$dark"; then
 	echo "SKIP gain: the scene is too dark to tell"
 else
@@ -224,7 +239,7 @@ if [ -z "$DBG" ]; then
 	echo "SKIP test pattern: no debugfs directory (CONFIG_DEBUG_FS off?)"
 else
 	rm -f "$TMP/t.raw"
-	timeout 60 v4l2-ctl -d "$DEV" --stream-mmap --stream-count=40 \
+	timeout 60 v4l2-ctl -d "$DEV" --stream-mmap --stream-count="$N" \
 		--stream-to="$TMP/t.raw" >/dev/null 2>&1 &
 	pid=$!
 	sleep 1.2
@@ -249,7 +264,7 @@ else
 	# Turn the pattern back off. This needs its own stream: the register
 	# interface refuses writes once the sensor is powered down, so it
 	# cannot be done after the capture above has ended.
-	timeout 30 v4l2-ctl -d "$DEV" --stream-mmap --stream-count=20 \
+	timeout 30 v4l2-ctl -d "$DEV" --stream-mmap --stream-count="$N" \
 		--stream-to=/dev/null >/dev/null 2>&1 &
 	pid=$!
 	sleep 1.2
@@ -270,7 +285,7 @@ echo "== sensor white balance"
 if [ -z "$DBG" ]; then
 	echo "SKIP sensor white balance: no debugfs directory"
 else
-	timeout 30 v4l2-ctl -d "$DEV" --stream-mmap --stream-count=60 \
+	timeout 30 v4l2-ctl -d "$DEV" --stream-mmap --stream-count="$N" \
 		--stream-to=/dev/null >/dev/null 2>&1 &
 	pid=$!
 	sleep 1.5
