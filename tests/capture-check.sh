@@ -11,7 +11,8 @@
 # requested one is rejected, and a covered lens still delivers full frame
 # counts. So the script also confirms the device accepted the geometry it
 # was asked for, that the file holds exactly the expected number of bytes,
-# and that the pixels carry signal above a flat black level.
+# that the pixels carry signal above a flat black level, and that odd
+# lines are not cut short by an unaligned stride.
 set -uo pipefail
 
 DEV=${DEV:-/dev/video0}
@@ -32,12 +33,18 @@ fail=0
 # format untouched and the capture silently runs in whatever was set last.
 FMT=BG10
 
+# VI on R35 and JetPack 7 reports a stride of width x 2 bytes but writes
+# each line at a 64-byte boundary. Ask for an aligned stride.
+stride() { # width
+	echo $(( ($1 * 2 + 63) / 64 * 64 ))
+}
+
 check_raw() { # mode width height
 	local mode=$1 w=$2 h=$3 name="mode$1 ${2}x${3}"
 
 	v4l2-ctl -d "$DEV" --set-ctrl sensor_mode="$mode" >/dev/null 2>&1
 	local err
-	if ! err=$(v4l2-ctl -d "$DEV" --set-fmt-video=width="$w",height="$h",pixelformat=$FMT 2>&1); then
+	if ! err=$(v4l2-ctl -d "$DEV" --set-fmt-video=width="$w",height="$h",pixelformat=$FMT,bytesperline="$(stride "$w")" 2>&1); then
 		if [ "$(printf '%s' "$err" | grep -ci busy)" -gt 0 ]; then
 			# fuser lists nothing for another user's process unless we are
 			# root, so a busy device can look like it has no owner at all.
@@ -79,17 +86,24 @@ check_raw() { # mode width height
 
 	# Content: a frame that is all black level has almost no spread. This
 	# catches a covered lens or a dead link, which frame counting misses.
-	local stats mean std max
-	stats=$(python3 - "$TMP/raw" "$size" "$h" <<-'PY'
+	# The tail of the second line catches a stride the VI cannot honour:
+	# it starts each line at a 64-byte boundary, so with an unaligned
+	# stride every second line begins early and ends in zeroes.
+	local stats mean std max tail
+	stats=$(python3 - "$TMP/raw" "$size" "$h" "$w" <<-'PY'
 	import sys, numpy as np
-	path, size, h = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+	path, size, h, w = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
 	d = np.fromfile(path, dtype=np.uint16)
 	frames = len(d) // (size // 2)
-	f = d[(frames - 1) * size // 2:frames * size // 2].reshape(h, -1).astype(np.float32)
-	print("%.1f %.1f %d" % (f.mean(), f.std(), f.max()))
+	f = d[(frames - 1) * size // 2:frames * size // 2].reshape(h, -1)[:, :w].astype(np.float32)
+	print("%.1f %.1f %d %d" % (f.mean(), f.std(), f.max(), f[1::2, -16:].max()))
 	PY
 	)
-	read -r mean std max <<<"$stats"
+	read -r mean std max tail <<<"$stats"
+	if [ "$tail" = 0 ]; then
+		echo "FAIL $name: odd lines end in zeroes, the line stride is not 64-byte aligned"
+		fail=1; return
+	fi
 	local verdict="ok"
 	if python3 -c "import sys; sys.exit(0 if float('$std') < 2.0 else 1)"; then
 		verdict="ok, but the frame is flat (std $std): lens covered or no light?"

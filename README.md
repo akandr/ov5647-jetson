@@ -278,13 +278,30 @@ frames. On the Orin a mismatch is worse. The node reports full
 resolution, the sensor streams the mode `sensor_mode` selects, and
 every capture times out.
 
+On the Xavier NX and the Orin the 1296x972 mode needs an explicit line
+stride. VI reports 2592 bytes per line but writes every line at a
+64-byte boundary, so each odd line starts 32 bytes early. Its first 16
+pixels land at the end of the line above, and its last 16 pixels stay
+zero. A naive demosaic then shows colour fringes on vertical edges.
+Ask for an aligned stride:
+
+    v4l2-ctl -d /dev/video0 --set-ctrl=sensor_mode=2 \
+             --set-fmt-video=width=1296,height=972,pixelformat=BG10,bytesperline=2624 \
+             --stream-mmap --stream-count=30 --stream-to=frames.raw
+
+Setting the `preferred_stride` control to 2624 before the format has
+the same effect. The Nano pads the line to 2624 bytes by itself. The
+other modes give lines that are already a multiple of 64 bytes, and
+Argus is not affected.
+
 `tests/capture-check.sh` checks every raw mode and every ISP mode. A
 frame count alone proves little here. `v4l2-ctl` keeps streaming in
 the previous format when a requested one is rejected, so the script
 confirms that the device accepted the geometry and that the file holds
-exactly the expected number of bytes. It also reports the spread of
-pixel values. A covered lens delivers full frame counts too, and the
-spread is what tells it from a working sensor.
+exactly the expected number of bytes. It asks for a 64-byte aligned
+stride and fails if odd lines end in zeroes. It also reports the
+spread of pixel values. A covered lens delivers full frame counts too,
+and the spread is what tells it from a working sensor.
 
 `tests/control-check.sh` checks that the controls reach the sensor.
 Frames can arrive with correct geometry while exposure, gain and frame
@@ -531,9 +548,10 @@ Problems that took real debugging time:
   layout disagree with the precompiled `tegra-camera.ko`.
   `driver/compat/` has a replacement with each value checked against
   the running kernel.
-- VI pads the line stride to 64 bytes. The 1296-wide mode gives
-  2624-byte lines in raw dumps on R32. R35 keeps the same mode at
-  2592-byte lines. Read the stride from the format.
+- The line stride of the 1296-wide mode depends on the release. R32
+  pads it to 2624 bytes. R35 and JetPack 7 report 2592 bytes, a
+  stride VI cannot write (see the raw Bayer path above). Read the
+  stride from the format.
 - The driver exposes registers under
   `/sys/kernel/debug/ov5647-<i2c-addr>/`. `regs` dumps the relevant
   ranges (system, AEC/AGC, timing, MIPI, ISP). `reg` takes `<addr>` to

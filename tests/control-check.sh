@@ -25,6 +25,8 @@ DEV=${DEV:-/dev/video0}
 MODE=${MODE:-2}
 W=${W:-1296}
 H=${H:-972}
+# A 64-byte aligned line, see the README.
+BPL=$(( (W * 2 + 63) / 64 * 64 ))
 
 command -v v4l2-ctl >/dev/null || { echo "need v4l2-utils"; exit 2; }
 command -v python3 >/dev/null || { echo "need python3"; exit 2; }
@@ -68,7 +70,7 @@ recover_sensor() {
 }
 
 v4l2-ctl -d "$DEV" --set-ctrl sensor_mode=$MODE >/dev/null 2>&1
-v4l2-ctl -d "$DEV" --set-fmt-video=width=$W,height=$H,pixelformat=BG10 >/dev/null 2>&1
+v4l2-ctl -d "$DEV" --set-fmt-video=width=$W,height=$H,pixelformat=BG10,bytesperline=$BPL >/dev/null 2>&1
 rm -f "$TMP/live.raw"
 timeout 30 v4l2-ctl -d "$DEV" --stream-mmap --stream-count=3 \
 	--stream-to="$TMP/live.raw" >/dev/null 2>&1
@@ -76,7 +78,7 @@ if [ ! -s "$TMP/live.raw" ]; then
 	echo "raw capture returns nothing, rebinding the sensor driver"
 	recover_sensor || { echo "  rebinding failed"; exit 2; }
 	v4l2-ctl -d "$DEV" --set-ctrl sensor_mode=$MODE >/dev/null 2>&1
-	v4l2-ctl -d "$DEV" --set-fmt-video=width=$W,height=$H,pixelformat=BG10 >/dev/null 2>&1
+	v4l2-ctl -d "$DEV" --set-fmt-video=width=$W,height=$H,pixelformat=BG10,bytesperline=$BPL >/dev/null 2>&1
 fi
 
 FB=$(v4l2-ctl -d "$DEV" --get-fmt-video 2>/dev/null | awk '/Size Image/{print $4}')
