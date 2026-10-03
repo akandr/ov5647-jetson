@@ -13,28 +13,28 @@
  * mode definitions.
  *
  * Device-tree overlay: OV5647 (Raspberry Pi Camera v1) on Jetson Xavier
- * NX Developer Kit (P3668 module + P3509 carrier), L4T R35.x. Camera in
- * the CAM0 connector.
+ * NX Developer Kit (P3668 module + P3509 carrier), L4T R35.x. Cameras in
+ * the CAM0 and CAM1 connectors.
  *
  * The stock DTB already contains the full rbpcv2 camera graph (VI,
- * NVCSI channel 0, cam_i2cmux, tegra-camera-platform) wired for the
- * IMX219 on cam0. This overlay swaps the sensor:
- *  - disables the stock IMX219 cam0 node
+ * NVCSI channels, cam_i2cmux, tegra-camera-platform) wired for an
+ * IMX219 on each connector. This overlay swaps both sensors:
+ *  - disables the stock IMX219 cam0 and cam1 nodes
  *  - adds one OV5647 per connector: CAM0 on cam_i2cmux i2c@0 (linux
- *    bus 9) and CAM1 on i2c@1 (bus 10), both at addr 0x36,
- *    PWDN on CAM0_PWDN (main gpio 124 / 0x7c, same line IMX219 uses)
- *  - repoints the NVCSI channel 0 input endpoint at the OV5647
+ *    bus 9) and CAM1 on i2c@1 (bus 10), both at addr 0x36, with the
+ *    reset gpios the IMX219 nodes use
+ *  - repoints both NVCSI input endpoints at the OV5647s
  *  - rebadges tegra-camera-platform module0 and module1
  *
  * This is the single-camera overlay with a second sensor beside it. The
  * connectors differ in four places, all read out of the board's own
- * base DTB rather than guessed:
+ * base DTB:
  *
  *   CAM0   i2c@0  serial_a  port-index 0  video0  reset gpio 0x7c
  *   CAM1   i2c@1  serial_c  port-index 2  video1  reset gpio 0x7d
  *
- * Note serial_c, not serial_b: on this carrier the second connector is
- * wired to the third CSI brick. Neither connector sets lane_polarity.
+ * The second connector uses serial_c. On this carrier it is wired to
+ * the third CSI brick. Neither connector sets lane_polarity.
  * discontinuous_clk is "no" on both, as in the single-camera overlay,
  * which says why.
  *

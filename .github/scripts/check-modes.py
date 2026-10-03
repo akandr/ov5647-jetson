@@ -87,7 +87,7 @@ def czujniki(dts: str):
     """Sensor nodes in file order: (name, [(mode number, {prop: value})]).
 
     Dual-camera overlays carry one such node per connector, and the modes
-    have to line up within a node, not across the file.
+    have to line up within each node.
     """
     out = []
     for m in re.finditer(r"\n(\t+)(\w*ov5647\w*@[0-9a-f]+) \{(.*?)\n\1\};", dts, re.S):

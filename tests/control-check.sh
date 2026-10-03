@@ -36,7 +36,7 @@ fail=0
 
 # Nothing here works while another process still has the device open, and
 # the usual culprit is an orphaned capture: a kill that hit a `timeout`
-# wrapper rather than v4l2-ctl, or an unprivileged pkill against a stream
+# wrapper and left v4l2-ctl running, or an unprivileged pkill against a stream
 # that was started under sudo, which fails silently.
 pkill -9 v4l2-ctl 2>/dev/null
 systemctl stop nvargus-daemon 2>/dev/null
@@ -149,13 +149,12 @@ kill $stream_pid 2>/dev/null; wait $stream_pid 2>/dev/null
 v4l2-ctl -d "$DEV" --set-ctrl frame_rate=30000000 >/dev/null 2>&1
 
 # Exposure and gain need light. Their effect is judged as a ratio against
-# the sensor black level, so a covered lens is reported as inconclusive
-# rather than as a driver failure.
+# the sensor black level. A covered lens is reported as inconclusive.
 #
-# "Too dark" has to be relative, not a count. R32 hands over the 10-bit
+# The "too dark" test is relative to the black level. R32 hands over the 10-bit
 # sample right-aligned and R35 expands it to the full 16-bit range, so the
 # same scene reads about 64x higher on R35 and its black level sits near 960
-# rather than near 15. A fixed threshold in counts passes stray light through
+# (15 on R32). A fixed threshold in counts passes stray light through
 # as signal there and then fails the check it should have skipped.
 too_dark() { # lit black -> true when the difference is negligible
 	python3 -c "import sys; sys.exit(0 if $1 - $2 < 0.05 * $2 else 1)"
@@ -266,8 +265,8 @@ fi
 # The module's identity comes out of the sensor's one-time programmable
 # memory, which is loaded once at probe. It has failed silently before, as
 # a buffer of zeroes, because the load needs the sensor's internal clock
-# and gets nothing while it sits in standby. Zeroes are therefore the
-# failure this checks for, not a value anyone can predict.
+# and gets nothing while it sits in standby. The check therefore looks
+# for zeroes, the one failure that can be predicted.
 echo "== module identity"
 # v4l2-ctl prints a string control quoted: otp_data: 'e80cca...'
 otp=$(v4l2-ctl -d "$DEV" --get-ctrl otp_data 2>/dev/null |

@@ -11,7 +11,7 @@
 # requested one is rejected, and a covered lens still delivers full frame
 # counts. So the script also confirms the device accepted the geometry it
 # was asked for, that the file holds exactly the expected number of bytes,
-# and that the pixels carry signal rather than a flat black level.
+# and that the pixels carry signal above a flat black level.
 set -uo pipefail
 
 DEV=${DEV:-/dev/video0}
@@ -101,8 +101,9 @@ check_raw() { # mode width height
 # its default 30 fps, which the 15 fps full-resolution mode cannot deliver, and
 # Argus refuses the stream. Only R32 names the cause, as "Frame Rate specified
 # is greater than supported"; R35 reports NvBufSurfaceFromFd failing instead,
-# which points at buffers rather than at the rate.
-# Count the buffers that arrive rather than grepping the log for trouble.
+# which suggests a buffer problem and hides the cause.
+# The check counts the buffers that arrive. A search of the log for error
+# words misses some failures.
 # A missing plugin makes gst-launch say "erroneous pipeline", which holds
 # no "error" and no "fail", so a word search called that a pass and
 # reported five working ISP modes on a board with no Argus plugin at all.
@@ -122,11 +123,11 @@ check_argus() { # mode width height fps
 	fi
 }
 
-# A capture that produces nothing almost always means something else still
-# has the device open, not that the hardware needs a reboot. The usual
+# A capture that produces nothing almost always means that something else
+# still has the device open. The hardware rarely needs a reboot. The usual
 # sources are Argus, which keeps the sensor open after a pipeline ends, and
-# a capture whose kill landed on a `timeout` wrapper instead of v4l2-ctl
-# itself, leaving an orphan streaming under init. An orphan started under
+# a capture whose kill hit the `timeout` wrapper and left v4l2-ctl
+# streaming under init. An orphan started under
 # sudo also survives an unprivileged pkill without reporting an error.
 holders() { # names whatever still has the device open
 	fuser "$DEV" 2>/dev/null | tr -s ' ' | sed 's/^ *//;s/ *$//'

@@ -4,7 +4,7 @@
 # Builds the driver against all three supported L4T lines without touching a
 # board. The headers come from NVIDIA's apt repository, so the weekly run is
 # the point as much as the per-push one: it builds against whatever NVIDIA
-# shipped that week and fails when their camera framework moves under us.
+# shipped that week and fails when its camera framework moves.
 name: build
 
 on:
@@ -52,8 +52,8 @@ jobs:
         run: modinfo .l4t-build/build-${{ matrix.board }}/ov5647.ko | head -12
       - uses: actions/upload-artifact@v4
         with:
-          # A compile check, not a release artifact: releases are built on the
-          # boards, against the kernel the module is going to be loaded into.
+          # A compile check. Releases are built on the boards, against the
+          # kernel the module will be loaded into.
           name: ov5647-${{ matrix.board }}-ci
           path: .l4t-build/build-${{ matrix.board }}/ov5647.ko
           retention-days: 7

@@ -9,8 +9,8 @@
 # entry. Checking each separately makes a failure name itself, where a
 # capture attempt only says that something is wrong.
 #
-# A board with no camera reports that, not failure: everything up to the
-# ribbon is still verifiable.
+# On a board with no camera the camera steps report SKIP and do not count
+# as failures. Everything up to the ribbon can still be verified.
 set -uo pipefail
 
 fail=0

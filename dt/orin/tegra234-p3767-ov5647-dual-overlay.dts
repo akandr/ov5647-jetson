@@ -28,7 +28,7 @@
  * and CAM0 sets lane_polarity = "6" where CAM1 sets nothing at all.
  * Every one of those, including the asymmetry in lane polarity and the
  * two different reset pins, is read off NVIDIA's own imx219-dual
- * overlay for this carrier rather than guessed.
+ * overlay for this carrier.
  *
  * Unlike Nano/Xavier, the JetPack 7 base DTB has the VI and NVCSI
  * blocks but no camera graph on them: no ports, no channels, no
@@ -38,9 +38,8 @@
  * taking three phandle references: &gpio (sensor PWDN), &gpio_aon and
  * &cam_i2c (i2c mux).
  *
- * Carry the per-connector values above into any mode added here: they
- * belong to the carrier's wiring, not to the sensor. Both connectors
- * capture with them.
+ * Carry the per-connector values above into any mode added here. They
+ * describe the carrier's wiring, and both connectors capture with them.
  *
  * discontinuous_clk is "yes" on both sensors, as in the single-camera
  * overlay, which says why.

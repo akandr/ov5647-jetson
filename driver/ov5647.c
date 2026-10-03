@@ -741,9 +741,9 @@ static int ov5647_set_exposure(struct tegracam_device *tc_dev, s64 val)
 
 static struct tegracam_ctrl_ops ov5647_ctrl_ops = {
 	.numctrls = ARRAY_SIZE(ctrl_cid_list),
-	/* Indexed by the framework's own constants, not by position in
-	 * ctrl_cid_list: a size left at zero fails control registration and
-	 * takes the whole probe down with it.
+	/* Indexed by the framework's own constants. Order in ctrl_cid_list
+	 * does not matter. A size left at zero fails control registration
+	 * and with it the whole probe.
 	 */
 	.string_ctrl_size = {
 		[TEGRA_CAM_STRING_CTRL_OTP_INDEX] = OV5647_OTP_STR_SIZE,
@@ -977,7 +977,7 @@ static int ov5647_shift_edge(struct camera_common_data *s_data, u16 hi_addr,
  * window by a pixel along the same axis puts the phase back, so the advertised
  * format stays true whatever the orientation.
  *
- * Both bits are toggled rather than set. The mode tables already mirror
+ * Both bits are toggled. The mode tables already mirror
  * horizontally, so horizontal-mirror means the opposite of what they do, which
  * is the change a user asking for it wants to see. They leave the vertical bit
  * clear, so there a toggle and a set come to the same thing.
@@ -991,8 +991,8 @@ static int ov5647_set_orientation(struct tegracam_device *tc_dev)
 	if (!pdata || (!pdata->h_mirror && !pdata->v_flip))
 		return 0;
 
-	/* The two axes need different corrections, which measurement settled
-	 * rather than the datasheet. Horizontally the phase follows the width
+	/* The two axes need different corrections; the datasheet does not
+	 * say so, measurement did. Horizontally the phase follows the width
 	 * of the read-out window, so only its left edge moves; the line length
 	 * on the wire is set by the DVP output size and does not change.
 	 * Vertically both edges move: moving only the top edge drops a line,
@@ -1029,8 +1029,9 @@ static int ov5647_set_orientation(struct tegracam_device *tc_dev)
  * The mode tables load their own exposure and gain. tegracam re-applies
  * the stored controls after set_mode only while the VI channel's
  * override_enable control is on; it defaults to off and Argus turns it
- * on, so a raw capture ran with the table's exposure until Argus had been
- * used once. Write the current gain and exposure here instead.
+ * on, so without this a raw capture would run with the table's exposure
+ * until Argus had been used once. Write the current gain and exposure
+ * here instead.
  */
 static int ov5647_restore_ctrls(struct tegracam_device *tc_dev)
 {

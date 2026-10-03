@@ -91,7 +91,7 @@ else
 	echo "PASS pipeline delivered all $FRAMES frames"
 fi
 
-# Pace, from the buffer timestamps rather than the clock: how many frames
+# Pace, from the buffer timestamps: how many frames
 # arrived and how much time passed between the first and the last.
 read -r got rate <<<"$(python3 - "$TMP/gst.log" <<-'PY'
 	import re, sys

@@ -57,7 +57,7 @@ BASE_SRC=/boot/kernel-ov5647-base.src
 # takes the first LABEL. Scope both the read below and the write later on to
 # that one entry, so a second LABEL carrying its own FDT is left alone.
 #
-# One process, not a pipeline: under `set -e` with pipefail, a producer cut
+# One process with no pipeline. Under `set -e` with pipefail, a producer cut
 # short by whatever ends the pipeline early dies of SIGPIPE, and the
 # assignment then aborts the installer before it has printed anything at
 # all. awk exits on the first match by itself and has nobody to race.
@@ -86,16 +86,12 @@ case "$compat" in
 		BASE=${BOOT_DTB:-/boot/tegra210-p3448-0003-p3542-0000.dtb}
 		grep -q "R32" /etc/nv_tegra_release || { echo "ERROR: L4T R32.x expected on Nano" >&2; exit 1; }
 		;;
-	*p3448*)
-		echo "ERROR: Jetson Nano 4GB is not supported yet (overlay symbols unverified)" >&2
-		exit 1
-		;;
 	*p3668*)
 		BOARD=xavier
 		DTS=dt/xavier/tegra194-p3668-ov5647-overlay.dts
 		# One DTB per module SKU ships; only the one extlinux names is
 		# in use. Without an FDT line, fall back on the SKU the board
-		# reports rather than on whichever file sorts first.
+		# reports. The file that sorts first may belong to another SKU.
 		sku=$(printf '%s' "$compat" | grep -o 'p3668-[0-9]*' | head -1 || true)
 		BASE=${BOOT_DTB:-$(ls /boot/dtb/kernel_tegra194-"${sku:-p3668}"-*.dtb 2>/dev/null | head -1 || true)}
 		grep -q "R35" /etc/nv_tegra_release || { echo "ERROR: L4T R35.x expected on Xavier NX" >&2; exit 1; }
@@ -118,8 +114,8 @@ echo "board type: $BOARD"
 
 # The two-camera overlays sit next to the one-camera ones and differ only
 # in the file name, so the board detection above stays untouched. Boards
-# with one connector have no such file and say so rather than falling
-# back to a single camera the caller did not ask for.
+# with one connector have no such file. The installer then stops with an
+# error and does not install a single-camera overlay in its place.
 if [ -n "$DUAL" ]; then
 	DUAL_DTS=${DTS%-overlay.dts}-dual-overlay.dts
 	[ -r "$DUAL_DTS" ] || {
@@ -134,7 +130,7 @@ KVER=$(uname -r)
 
 # Undo exactly what a successful install wrote, in the reverse order: the boot
 # entry first, so a half-finished removal still leaves the board booting the
-# stock tree rather than a merged one whose files are gone.
+# stock tree. The merged tree's files may already be gone.
 if [ -n "$UNINSTALL" ]; then
 	echo "== uninstall =="
 	if [ -e "$EXT.orig" ]; then
@@ -208,8 +204,8 @@ make -C driver install
 
 echo "== select the merged device tree =="
 [ -f "$EXT.orig" ] || cp "$EXT" "$EXT.orig"
-# Edit the entry DEFAULT names, not merely the first one: extlinux.conf may
-# carry several LABEL blocks and the bootable one is whichever DEFAULT picks.
+# Edit the entry that DEFAULT names. extlinux.conf may carry several LABEL
+# blocks, and DEFAULT picks the one that boots.
 # Drop every FDT line in that entry and write exactly one, so a config left
 # with duplicates by an earlier run converges to a single line.
 awk -v ov="$OV" -v want="$LABEL" "$entry_awk"'
@@ -243,6 +239,13 @@ grep -qF "$OV" "$EXT" || { echo "ERROR: could not add FDT entry to $EXT" >&2; ex
 
 echo
 echo "Installed ($BOARD). Reboot, then test with:"
-echo "  gst-launch-1.0 nvarguscamerasrc ! 'video/x-raw(memory:NVMM),width=1920,height=1080' ! fakesink"
+if [ "$BOARD" = orin ]; then
+	# Argus does not run for this sensor on JetPack 7, so test the raw path.
+	echo "  v4l2-ctl -d /dev/video0 --set-ctrl=sensor_mode=1 \\"
+	echo "    --set-fmt-video=width=1920,height=1080,pixelformat=BG10 --stream-mmap --stream-count=30"
+else
+	echo "  gst-launch-1.0 nvarguscamerasrc ! 'video/x-raw(memory:NVMM),width=1920,height=1080' ! fakesink"
+	echo "Colour on the ISP: see isp/ and docs/isp-tuning.md."
+fi
 echo "To uninstall:"
 echo "  sudo ./install.sh --uninstall && sudo reboot"
