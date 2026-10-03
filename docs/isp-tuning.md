@@ -240,12 +240,14 @@ and `fit.py` also needs SciPy. The shell scripts run on the board.
 
 ## Other measurements
 
-![Sensor black level against analog gain](img/black-vs-gain.png)
+![Sensor black level against analog gain at 1296x972](img/black-vs-gain.png)
 
-The sensor's black level falls with analog gain. It is about 15 of
-1023 up to 8x and 11 at 15.5x, steps down at 16x, and reaches about 2
-at 64x with two thirds of the pixels clipped at zero. Both boards
-agree. Changing the BLC registers (0x4000 to 0x4005) did not hold it.
+In the binned modes the sensor's black level falls with analog gain.
+It is about 15 of 1023 up to 8x and 11 at 15.5x, steps down at 16x,
+and reaches about 2 at 64x with two thirds of the pixels clipped at
+zero. Both boards agree. At full resolution it stays near 16 up to
+32x, taken as the zero-exposure intercept of dark frames at four
+exposures. Changing the BLC registers (0x4000 to 0x4005) did not hold it.
 A cap on analog gain at 15.9x, with digital gain from the ISP above
 that, removes the clipping but lowers the signal to noise ratio in low
 light. The driver applies no cap.
