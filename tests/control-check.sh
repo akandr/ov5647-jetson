@@ -264,6 +264,27 @@ else
 	fi
 fi
 
+# The sensor resets with its own white balance on, which scales red and
+# blue in the raw output and left captures of one scene disagreeing.
+echo "== sensor white balance"
+if [ -z "$DBG" ]; then
+	echo "SKIP sensor white balance: no debugfs directory"
+else
+	timeout 30 v4l2-ctl -d "$DEV" --stream-mmap --stream-count=60 \
+		--stream-to=/dev/null >/dev/null 2>&1 &
+	pid=$!
+	sleep 1.5
+	echo 0x5001 > "$DBG/reg" 2>/dev/null
+	awb=$(awk '{print $2}' "$DBG/reg" 2>/dev/null)
+	wait $pid 2>/dev/null
+	if [ "$awb" = 0x00 ]; then
+		echo "PASS sensor white balance: off (0x5001 = $awb)"
+	else
+		echo "FAIL sensor white balance: 0x5001 = ${awb:-unreadable}, the sensor balances the raw output itself"
+		fail=1
+	fi
+fi
+
 # The module's identity comes out of the sensor's one-time programmable
 # memory, which is loaded once at probe. It has failed silently before, as
 # a buffer of zeroes, because the load needs the sensor's internal clock

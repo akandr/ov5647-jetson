@@ -68,6 +68,7 @@
 #define OV5647_REG_TIMING_TC_21		0x3821
 #define OV5647_VFLIP			BIT(1)
 #define OV5647_MIRROR			BIT(1)
+#define OV5647_REG_AWB			0x5001
 #define OV5647_REG_TEST_PATTERN		0x503d
 #define OV5647_TEST_PATTERN_EN		BIT(7)
 #define OV5647_REG_OTP_DATA		0x3d00
@@ -1062,6 +1063,14 @@ static int ov5647_set_mode(struct tegracam_device *tc_dev)
 	int err = 0;
 
 	err = ov5647_write_table(priv, mode_table[s_data->mode]);
+	if (err)
+		return err;
+
+	/* The sensor comes out of reset with its own white balance on,
+	 * which scales red and blue in the raw output. Mainline turns it
+	 * off as well.
+	 */
+	err = ov5647_write_reg(s_data, OV5647_REG_AWB, 0);
 	if (err)
 		return err;
 
