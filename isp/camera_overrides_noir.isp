@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026 Artur Andrzejczak <andrzejczak.artur@gmail.com>
+#
+# ISP overrides for the OV5647 NoIR module (no infrared cut filter) on
+# L4T R35. Fitted to a ColorChecker on raw frames from a Xavier NX and
+# an Orin Nano, under three LED sources and in daylight shade, and
+# checked on the Xavier NX ISP output. See docs/isp-tuning.md.
+#
+# Install:
+#   sudo cp camera_overrides_noir.isp /var/nvidia/nvcam/settings/camera_overrides.isp
+#   sudo chmod 664 /var/nvidia/nvcam/settings/camera_overrides.isp
+#   sudo rm -f /var/nvidia/nvcam/settings/nvcam_cache_*.bin
+#   sudo systemctl restart nvargus-daemon
+# A line Argus rejects stops the camera; journalctl -u nvargus-daemon
+# names it. Matrices labelled 2000 and 12000 K stopped it without a log
+# line; 2500 to 9000 K works.
+
+# White balance: the white each source gives on this sensor, raw R, Gr,
+# Gb, B scaled to 900. The values carry an empirical correction of
+# about R x1.08, B x1.12, and source C was adjusted by hand, so that a
+# grey comes out neutral on the ISP output indoors.
+# The generic tuning clamps white to its own sensor's grey line; the
+# clamps are opened up.
+awb.v4.FusionLights[0] = {900,779,779,445}; # source A, warm
+awb.v4.FusionLights[1] = {875,900,900,696}; # source B, neutral
+awb.v4.FusionLights[2] = {700,900,900,806}; # source C, cool
+awb.v4.FusionLights[3] = {900,779,779,445}; # source A, warm
+awb.v4.FusionLights[4] = {875,900,900,696}; # source B, neutral
+awb.v4.FusionLights[5] = {900,859,859,866}; # daylight shade
+awb.v4.FusionLights[6] = {875,900,900,696}; # source B, neutral
+awb.v4.FusionLights[7] = {700,900,900,806}; # source C, cool
+
+awb.v4.FusionInitLight = 4;
+awb.LowU = 0.05;
+awb.HighU = 4.0;
+awb.GrayLineThickness = 1.0;
+awb.NumGrayLineSoftClampPoints = 0;
+awb.v4.LowU = 0.05;
+awb.v4.HighU = 4.0;
+awb.v4.GrayLineThickness = 1.0;
+awb.v4.NumGrayLineSoftClampPoints = 0;
+
+# Colour correction per colour temperature, as the ISP estimates it.
+# Each row is an input channel. The indoor matrices were fitted to the
+# chart in raw, with a 1.2 saturation boost folded in; the last one is
+# the daylight fit, held weak because infrared limits what it can do.
+colorCorrection.numColorCorrectionMatrices = 4;
+colorCorrection.set[0].cct = 3500;
+colorCorrection.set[0].ccMatrix[0] = { 2.0900, -0.7330, 0.0312, 0.0 };
+colorCorrection.set[0].ccMatrix[1] = { -0.5496, 2.0764, -2.4739, 0.0 };
+colorCorrection.set[0].ccMatrix[2] = { -0.5404, -0.3434, 3.4427, 0.0 };
+colorCorrection.set[0].ccMatrix[3] = { 0.0, 0.0, 0.0, 1.0 };
+colorCorrection.set[1].cct = 4500;
+colorCorrection.set[1].ccMatrix[0] = { 2.1539, -0.5976, 0.0830, 0.0 };
+colorCorrection.set[1].ccMatrix[1] = { -0.7374, 1.9737, -2.0084, 0.0 };
+colorCorrection.set[1].ccMatrix[2] = { -0.4165, -0.3762, 2.9254, 0.0 };
+colorCorrection.set[1].ccMatrix[3] = { 0.0, 0.0, 0.0, 1.0 };
+colorCorrection.set[2].cct = 5500;
+colorCorrection.set[2].ccMatrix[0] = { 2.3131, -0.5325, 0.0521, 0.0 };
+colorCorrection.set[2].ccMatrix[1] = { -0.9095, 1.9623, -1.6989, 0.0 };
+colorCorrection.set[2].ccMatrix[2] = { -0.4036, -0.4298, 2.6468, 0.0 };
+colorCorrection.set[2].ccMatrix[3] = { 0.0, 0.0, 0.0, 1.0 };
+colorCorrection.set[3].cct = 8500;
+colorCorrection.set[3].ccMatrix[0] = { 1.2666, -0.3290, -0.2802, 0.0 };
+colorCorrection.set[3].ccMatrix[1] = { -0.0680, 1.3802, -0.1652, 0.0 };
+colorCorrection.set[3].ccMatrix[2] = { -0.1986, -0.0512, 1.4454, 0.0 };
+colorCorrection.set[3].ccMatrix[3] = { 0.0, 0.0, 0.0, 1.0 };
