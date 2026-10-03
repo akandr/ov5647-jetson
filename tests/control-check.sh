@@ -10,13 +10,12 @@
 # reach the sensor, which is a separate way for a camera driver to be
 # broken: streaming looks perfect while every control is ignored.
 #
-# Two rules decide how this script measures, and both were learned the
-# hard way:
+# Two rules decide how this script measures:
 #
-#   - Controls are set WHILE streaming. With override_enable=0, which is
-#     the default, tegracam does not apply values that were set before
-#     the stream started, so a sweep done that way shows a flat line and
-#     looks like a driver bug.
+#   - Sweeps set controls WHILE streaming, as applications do. A separate
+#     check sets exposure before streamon, which the driver has to carry
+#     into the stream itself: tegracam only does it while the VI
+#     override_enable control is on, and that defaults to off.
 #   - Frame rate is measured inside ONE stream, counting frames in a
 #     time window. Every stream start rewrites the nominal frame length,
 #     so timing separate short streams always reports the mode default.
@@ -97,6 +96,15 @@ mean_of_last() { # file
 	PY
 }
 
+# Sets a control before streamon, then streams and returns the last frame.
+prestart() { # "ctrl=val,..." frames
+	rm -f "$TMP/p.raw"
+	v4l2-ctl -d "$DEV" --set-ctrl "$1" >/dev/null 2>&1
+	timeout 60 v4l2-ctl -d "$DEV" --stream-mmap --stream-count="$2" \
+		--stream-to="$TMP/p.raw" >/dev/null 2>&1
+	mean_of_last "$TMP/p.raw"
+}
+
 # Streams, changes a control a moment in, and returns the last frame.
 probe() { # "ctrl=val,..." frames
 	rm -f "$TMP/p.raw"
@@ -167,6 +175,26 @@ else
 		echo "PASS exposure: signal above black grew ${rise}x from 2 ms to 32 ms"
 	else
 		echo "FAIL exposure: signal above black grew only ${rise}x from 2 ms to 32 ms"
+		fail=1
+	fi
+fi
+
+# The mode table loads its own exposure at streamon, and tegracam puts
+# the stored value back only while the VI override_enable control is on.
+# A value set before streaming has to survive that either way.
+echo "== exposure set before streamon"
+if too_dark "$hi" "$dark"; then
+	echo "SKIP exposure before streamon: the scene is too dark to tell"
+else
+	read -r plo _ _ <<<"$(prestart "gain=16,exposure=2000" 20)"
+	read -r phi _ _ <<<"$(prestart "gain=16,exposure=32000" 20)"
+	# Lost values leave both captures at the table's exposure, a ratio
+	# near 1.
+	rise=$(python3 -c "print('%.2f' % (($phi - $dark) / max($plo - $dark, 0.1)))")
+	if python3 -c "import sys; sys.exit(0 if $rise >= 3.0 else 1)"; then
+		echo "PASS exposure before streamon: signal above black grew ${rise}x from 2 ms to 32 ms"
+	else
+		echo "FAIL exposure before streamon: signal above black grew only ${rise}x from 2 ms to 32 ms"
 		fail=1
 	fi
 fi

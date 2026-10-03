@@ -1025,6 +1025,31 @@ static int ov5647_set_orientation(struct tegracam_device *tc_dev)
 	return 0;
 }
 
+/*
+ * The mode tables load their own exposure and gain. tegracam re-applies
+ * the stored controls after set_mode only while the VI channel's
+ * override_enable control is on; it defaults to off and Argus turns it
+ * on, so a raw capture ran with the table's exposure until Argus had been
+ * used once. Write the current gain and exposure here instead.
+ */
+static int ov5647_restore_ctrls(struct tegracam_device *tc_dev)
+{
+	struct v4l2_ctrl_handler *hdl =
+		&tc_dev->s_data->tegracam_ctrl_hdl->ctrl_handler;
+	struct v4l2_ctrl *ctrl;
+	int err = 0;
+
+	ctrl = v4l2_ctrl_find(hdl, TEGRA_CAMERA_CID_GAIN);
+	if (ctrl)
+		err = ov5647_set_gain(tc_dev, v4l2_ctrl_g_ctrl_int64(ctrl));
+
+	ctrl = v4l2_ctrl_find(hdl, TEGRA_CAMERA_CID_EXPOSURE);
+	if (ctrl && !err)
+		err = ov5647_set_exposure(tc_dev, v4l2_ctrl_g_ctrl_int64(ctrl));
+
+	return err;
+}
+
 static int ov5647_set_mode(struct tegracam_device *tc_dev)
 {
 	struct ov5647 *priv = (struct ov5647 *)tegracam_get_privdata(tc_dev);
@@ -1040,10 +1065,10 @@ static int ov5647_set_mode(struct tegracam_device *tc_dev)
 		return err;
 
 	/* The register tables leave VTS at the sensor reset default, so
-	 * program the frame length here. With override_enable clear the
-	 * framework applies no stored controls at stream start, so use the
-	 * rate the device tree advertises; otherwise a capture that asks for
-	 * nothing runs at the mode's shortest frame.
+	 * program the frame length here, at the rate the device tree
+	 * advertises; otherwise a capture that asks for nothing runs at the
+	 * mode's shortest frame. A frame_rate set before streamon is applied
+	 * only by tegracam's overrides, after this.
 	 */
 	if (rate) {
 		err = ov5647_set_frame_rate(tc_dev, rate);
@@ -1060,6 +1085,10 @@ static int ov5647_set_mode(struct tegracam_device *tc_dev)
 		if (!err)
 			priv->frame_length = vts;
 	}
+	if (err)
+		return err;
+
+	err = ov5647_restore_ctrls(tc_dev);
 	if (err)
 		return err;
 
@@ -1202,11 +1231,6 @@ static int ov5647_probe(struct i2c_client *client,
 	priv->subdev = &tc_dev->s_data->subdev;
 	priv->pwdn_gpio_owned = ov5647_last_gpio_owned;
 	tegracam_set_privdata(tc_dev, (void *)priv);
-
-	/* Our mode tables issue a software reset, wiping any control values
-	 * applied before streamon; have tegracam re-apply current controls
-	 * after set_mode (tegracam_ctrl_set_overrides). */
-	tc_dev->s_data->override_enable = true;
 
 	err = ov5647_board_setup(priv);
 	if (err) {
