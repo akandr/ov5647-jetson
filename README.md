@@ -260,6 +260,11 @@ run ends with the revert commands: restore that backup, delete the
 module from `/lib/modules/$(uname -r)/updates` and the installer's
 files under `/boot`, run `depmod -a` and reboot.
 
+Run the installer again after an L4T update, before rebooting. The
+kernel package regenerates the boot entry, and on JetPack 7 it moved
+the installer's `FDT` line into a backup entry, which leaves the next
+boot without the overlay. A new kernel also needs the module rebuilt.
+
 After the reboot:
 
     # ISP path, 1080p30 through hardware debayer/AE/AWB (Nano, Xavier NX)
