@@ -9,3 +9,4 @@ modules.order
 *.dtb
 build/
 .l4t-build/
+__pycache__/

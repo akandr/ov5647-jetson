@@ -646,7 +646,8 @@ Problems that took real debugging time:
     dt/xavier/  DT overlays, Xavier NX devkit (L4T R35)
     dt/orin/    DT overlays, Orin Nano/NX devkit (JetPack 7)
     tests/      on-board checks: capture geometry and content, controls
-    isp/        ISP override file for the NoIR module (L4T R35)
+    isp/        ISP override file for the NoIR module (L4T R35) and its source data
+    tools/isp/  tools that measure a chart and build an override file
     docs/       prior art survey, ISP tuning notes, captures and figures
     .github/    CI: builds against all three L4T lines, no board needed
 
