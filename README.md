@@ -11,19 +11,25 @@ NX the sensor works with the hardware ISP (AE, AWB, debayer) through
 V4L2 Bayer capture works in every mode too. On the Orin only the raw
 path works so far.
 
-A ColorChecker through the ISP of a Xavier NX under an LED source. On
-the left is the generic L4T tuning. On the right is the same scene
-after calibration with `isp/camera_overrides_noir.isp`.
+A ColorChecker through the ISP of a Xavier NX under an LED source,
+with the generic L4T tuning and with `isp/camera_overrides_noir.isp`.
 
-![A ColorChecker through the ISP, generic tuning and after calibration](docs/img/chart-before-after.jpg)
+| generic L4T tuning | `camera_overrides_noir.isp` |
+|---|---|
+| ![ColorChecker, generic tuning](docs/img/chart-generic.jpg) | ![ColorChecker, indoor override](docs/img/chart-tuned.jpg) |
 
 Outdoors the result is weaker. The modules used here are the NoIR
-variant and have no infrared cut filter, so foliage comes out pale and
-colourless with any tuning. The phone picture on the right is for
-scale. [docs/isp-tuning.md](docs/isp-tuning.md) has the measurements
-and the reasons.
+variant and have no infrared cut filter, so foliage comes out pale with
+any tuning. `isp/camera_overrides_noir_daylight.isp` removes the
+magenta cast. The phone picture is from a day earlier, for scale.
+[docs/isp-tuning.md](docs/isp-tuning.md) has the measurements and the
+reasons.
 
-![A garden through the ISP, generic tuning and daylight override, next to a phone](docs/img/garden-comparison.jpg)
+| generic L4T tuning | earlier override file |
+|---|---|
+| ![Garden, generic tuning](docs/img/garden-generic.jpg) | ![Garden, earlier override file](docs/img/garden-earlier.jpg) |
+| **`camera_overrides_noir_daylight.isp`, `saturation=1.5`** | **iPhone, a day earlier** |
+| ![Garden, daylight override](docs/img/garden-daylight.jpg) | ![Garden, phone](docs/img/garden-phone.jpg) |
 
 ## Why this exists
 
@@ -262,8 +268,9 @@ files under `/boot`, run `depmod -a` and reboot.
 
 Run the installer again after an L4T update, before rebooting. The
 kernel package regenerates the boot entry, and on JetPack 7 it moved
-the installer's `FDT` line into a backup entry, which leaves the next
-boot without the overlay. A new kernel also needs the module rebuilt.
+the installer's `FDT` line into a backup entry. The next boot then
+comes up without the overlay. A new kernel also needs the module
+rebuilt.
 
 After the reboot:
 
@@ -396,19 +403,26 @@ changes to run on this stack, with any sensor.
 ## Colour on the ISP
 
 On R32 and R35 the ISP falls back to a generic tuning made for another
-sensor, and images come out magenta. `isp/camera_overrides_noir.isp`
-corrects white balance and colour for the NoIR module used here. It was
-fitted to a ColorChecker and checked on the Xavier NX ISP:
+sensor, and images come out magenta. Two files in `isp/` correct white
+balance and colour for the NoIR module used here:
 
-| light source | generic tuning | with the override |
-|---|---|---|
-| warm LED | 41.7 | 17.9 |
-| neutral LED | 37.3 | 11.3 |
-| cool LED | 32.3 | 11.1 |
+- `camera_overrides_noir.isp` for artificial light.
+- `camera_overrides_noir_daylight.isp` for daylight. Outdoors it does
+  better with `saturation=1.5` on `nvarguscamerasrc`. In dim light it
+  crushes the shadows.
 
-The numbers are the mean ΔE over the chart's colour patches, lower is
-better. Outdoors the missing infrared filter limits what any tuning can
-do. To install the file:
+Both were fitted to a ColorChecker and checked on the ISP of the Nano
+(R32) and the Xavier NX (R35). The numbers are the mean ΔE over the
+chart's colour patches, lower is better:
+
+| conditions | board | generic tuning | with the file |
+|---|---|---|---|
+| three LED sources, indoor file | Nano | 31 to 34 | 9.8 to 14.0 |
+| three LED sources, indoor file | Xavier NX | 32 to 35 | 10.6 to 13.5 |
+| shade and sun, daylight file with `saturation=1.5` | Nano | 45 to 46 | 24 to 30 |
+| shade and sun, daylight file with `saturation=1.5` | Xavier NX | 47 | 23 to 28 |
+
+To install the indoor file (the daylight file installs the same way):
 
     sudo cp isp/camera_overrides_noir.isp /var/nvidia/nvcam/settings/camera_overrides.isp
     sudo chmod 664 /var/nvidia/nvcam/settings/camera_overrides.isp
@@ -416,7 +430,7 @@ do. To install the file:
     sudo systemctl restart nvargus-daemon
 
 [docs/isp-tuning.md](docs/isp-tuning.md) describes the measurements,
-the method, how the numbers become the file, and the limits.
+the method, how the numbers become the files, and the limits.
 
 ## Control ranges in practice
 
@@ -591,9 +605,9 @@ Problems that took real debugging time:
 ## Known limitations
 
 - Without an override file the ISP uses a generic tuning made for
-  another sensor, and images pull magenta. The override file in `isp/`
-  is checked on R35 only and is untested outdoors. See Colour on the
-  ISP.
+  another sensor, and images pull magenta. The files in `isp/` cover
+  artificial light and daylight separately, and outdoors the NoIR
+  module keeps foliage pale. See Colour on the ISP.
 - Raw V4L2 capture and Argus do not mix within one session. After an
   Argus pipeline the raw path delivers no frames until the sensor
   driver is rebound. This happens on both L4T generations while the
@@ -669,7 +683,7 @@ Problems that took real debugging time:
     dt/xavier/  DT overlays, Xavier NX devkit (L4T R35)
     dt/orin/    DT overlays, Orin Nano/NX devkit (JetPack 7)
     tests/      on-board checks: capture geometry and content, controls
-    isp/        ISP override file for the NoIR module (L4T R35) and its source data
+    isp/        ISP override files for the NoIR module (L4T R32 and R35) and their source data
     tools/isp/  tools that measure a chart and build an override file
     docs/       prior art survey, ISP tuning notes, captures and figures
     .github/    CI: builds against all three L4T lines, no board needed
