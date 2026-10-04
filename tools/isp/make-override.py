@@ -18,8 +18,13 @@ The JSON lists the light sources. For each one:
 
 and at the top level:
 
-  correction  factors for R and B applied to every white before scaling
+  correction  optional factors for R and B applied to every white before
+              scaling
   init_light  awb.v4.FusionInitLight
+  lux_prior   optional, false turns off the lux prior of the white
+              balance (awb.v4.FusionUseLux)
+  black       optional sensor black level, as a fraction of full scale,
+              for the ISP to subtract (opticalBlack.float.manualBias*)
   header      comment lines for the top of the file
 
 A white becomes {R, G, G, B} scaled so that the largest is 900, after
@@ -57,8 +62,9 @@ def main():
 	        "# scaled so that the largest is 900. The clamps the generic tuning",
 	        "# puts on the white estimate are opened up."]
 	slots = {}
+	correction = cfg.get("correction", [1.0, 1.0])
 	for src in cfg["sources"]:
-		v = src.get("fusion") or fusion_light(src["white"], cfg["correction"])
+		v = src.get("fusion") or fusion_light(src["white"], correction)
 		for i in src["slots"]:
 			slots[i] = (v, src["name"])
 	if sorted(slots) != list(range(8)):
@@ -69,6 +75,13 @@ def main():
 	out.append(f"awb.v4.FusionInitLight = {cfg['init_light']};")
 	for prefix in ("awb.", "awb.v4."):
 		out += [f"{prefix}{k} = {v};" for k, v in CLAMPS]
+	if cfg.get("lux_prior", True) is False:
+		out += ["", "# The lux prior of the generic tuning pulls the white towards a",
+		        "# daylight setting of another sensor in bright scenes.",
+		        "awb.v4.FusionUseLux = FALSE;"]
+	if "black" in cfg:
+		out += ["", "# The sensor black level, which the generic tuning does not subtract."]
+		out += [f"opticalBlack.float.manualBias{c} = {cfg['black']};" for c in ("R", "GR", "GB", "B")]
 
 	sets = sorted(cfg["sources"], key=lambda s: s["cct"])
 	out += ["", "# Colour matrices by the colour temperature the ISP estimates. Each",

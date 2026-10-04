@@ -91,5 +91,8 @@ jobs:
       - uses: actions/checkout@v4
       - run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends shellcheck python3-numpy
       - run: shellcheck -S warning install.sh tests/*.sh .github/scripts/*.sh tools/isp/*.sh
-      # The override file is generated from its JSON source; the two must match.
-      - run: python3 tools/isp/make-override.py isp/camera_overrides_noir.json | diff - isp/camera_overrides_noir.isp
+      # The override files are generated from their JSON sources; each pair must match.
+      - run: |
+          for j in isp/*.json; do
+            python3 tools/isp/make-override.py "$j" | diff - "${j%.json}.isp"
+          done
