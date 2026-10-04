@@ -44,7 +44,7 @@ case $mode in
 0) size="width=2592,height=1944,framerate=15/1" ;;
 1) size="width=1920,height=1080,framerate=30/1" ;;
 2) size="width=1296,height=972,framerate=30/1" ;;
-3) size="width=640,height=480,framerate=62/1" ;;
+3) size="width=640,height=480,framerate=90/1" ;;
 4) size="width=1280,height=720,framerate=60/1" ;;
 *) echo "mode 0 to 4" >&2; exit 2 ;;
 esac

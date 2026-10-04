@@ -412,12 +412,12 @@ static const ov5647_reg ov5647_mode_1280x720_60fps[] = {
 	{OV5647_TABLE_END, 0x00}
 };
 
-static const ov5647_reg ov5647_mode_640x480_62fps[] = {
+static const ov5647_reg ov5647_mode_640x480_90fps[] = {
 	{0x0100, 0x00},
 	{0x0103, 0x01},
 	{OV5647_TABLE_WAIT_MS, 10},
 	{0x3035, 0x11},
-	{0x3036, 0x46},
+	{0x3036, 0x69},
 	{0x303c, 0x11},
 	{0x3821, 0x07},
 	{0x3820, 0x41},
@@ -504,7 +504,7 @@ enum {
 	OV5647_MODE_2592x1944_15FPS,
 	OV5647_MODE_1920x1080_30FPS,
 	OV5647_MODE_1296x972_30FPS,
-	OV5647_MODE_640x480_62FPS,
+	OV5647_MODE_640x480_90FPS,
 	OV5647_MODE_1280x720_60FPS,
 };
 
@@ -512,13 +512,13 @@ static const ov5647_reg *mode_table[] = {
 	[OV5647_MODE_2592x1944_15FPS] = ov5647_mode_2592x1944_15fps,
 	[OV5647_MODE_1920x1080_30FPS] = ov5647_mode_1920x1080_30fps,
 	[OV5647_MODE_1296x972_30FPS] = ov5647_mode_1296x972_30fps,
-	[OV5647_MODE_640x480_62FPS] = ov5647_mode_640x480_62fps,
+	[OV5647_MODE_640x480_90FPS] = ov5647_mode_640x480_90fps,
 	[OV5647_MODE_1280x720_60FPS] = ov5647_mode_1280x720_60fps,
 };
 
 static const int ov5647_15fps[] = { 15, };
 static const int ov5647_30fps[] = { 30, };
-static const int ov5647_62fps[] = { 62, };
+static const int ov5647_90fps[] = { 90, };
 static const int ov5647_60fps[] = { 60, };
 
 /*
@@ -529,7 +529,7 @@ static const struct camera_common_frmfmt ov5647_frmfmt[] = {
 	{{2592, 1944}, ov5647_15fps, 1, 0, OV5647_MODE_2592x1944_15FPS},
 	{{1920, 1080}, ov5647_30fps, 1, 0, OV5647_MODE_1920x1080_30FPS},
 	{{1296, 972}, ov5647_30fps, 1, 0, OV5647_MODE_1296x972_30FPS},
-	{{640, 480}, ov5647_62fps, 1, 0, OV5647_MODE_640x480_62FPS},
+	{{640, 480}, ov5647_90fps, 1, 0, OV5647_MODE_640x480_90FPS},
 	{{1280, 720}, ov5647_60fps, 1, 0, OV5647_MODE_1280x720_60FPS},
 };
 

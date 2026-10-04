@@ -211,7 +211,7 @@
 
 					embedded_metadata_height = "0";
 				};
-				mode3 { /* OV5647_MODE_640x480_62FPS */
+				mode3 { /* OV5647_MODE_640x480_90FPS */
 					mclk_khz = "25000";
 					num_lanes = "2";
 					tegra_sinterface = "serial_a";
@@ -228,8 +228,8 @@
 					readout_orientation = "0";
 					line_length = "1852";
 					inherent_gain = "1";
-					mclk_multiplier = "2.33";
-					pix_clk_hz = "58333300";
+					mclk_multiplier = "3.50";
+					pix_clk_hz = "87500000";
 
 					gain_factor = "16";
 					framerate_factor = "1000000";
@@ -241,9 +241,9 @@
 					min_hdr_ratio = "1";
 					max_hdr_ratio = "1";
 					min_framerate = "2000000";
-					max_framerate = "62000000";
+					max_framerate = "93740000";
 					step_framerate = "1";
-					default_framerate = "62000000";
+					default_framerate = "90000000";
 					min_exp_time = "127";
 					max_exp_time = "500000";
 					step_exp_time = "1";
@@ -454,7 +454,7 @@
 
 					embedded_metadata_height = "0";
 				};
-				mode3 { /* OV5647_MODE_640x480_62FPS */
+				mode3 { /* OV5647_MODE_640x480_90FPS */
 					mclk_khz = "25000";
 					num_lanes = "2";
 					tegra_sinterface = "serial_c";
@@ -471,8 +471,8 @@
 					readout_orientation = "0";
 					line_length = "1852";
 					inherent_gain = "1";
-					mclk_multiplier = "2.33";
-					pix_clk_hz = "58333300";
+					mclk_multiplier = "3.50";
+					pix_clk_hz = "87500000";
 
 					gain_factor = "16";
 					framerate_factor = "1000000";
@@ -484,9 +484,9 @@
 					min_hdr_ratio = "1";
 					max_hdr_ratio = "1";
 					min_framerate = "2000000";
-					max_framerate = "62000000";
+					max_framerate = "93740000";
 					step_framerate = "1";
-					default_framerate = "62000000";
+					default_framerate = "90000000";
 					min_exp_time = "127";
 					max_exp_time = "500000";
 					step_exp_time = "1";

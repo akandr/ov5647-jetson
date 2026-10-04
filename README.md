@@ -60,7 +60,7 @@ modules.
 | 0 | 2592x1944 | 15 | 15.6 |
 | 1 | 1920x1080 | 30 | 32.8 |
 | 2 | 1296x972 | 30 | 32.2 |
-| 3 | 640x480 | 62 | 62.5 |
+| 3 | 640x480 | 90 | 93.0 |
 | 4 | 1280x720 | 60 | 60.0 |
 
 Mode 2 is a 2x2-binned readout of the full sensor. Mode 4 is the same
@@ -632,7 +632,7 @@ Problems that took real debugging time:
   reset for part of the sequence. The Nano and the Xavier NX capture
   anyway. The Orin's receiver never locked on it. Without those three
   writes every register ends with the same value, and the mode captures
-  at 62 fps. The PLL, the MIPI clock period, the settle time and the
+  normally. The PLL, the MIPI clock period, the settle time and the
   frame width were tried first and made no difference. CI now rejects a
   block reset inside a mode table.
 

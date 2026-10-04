@@ -215,7 +215,7 @@ if [ -z "$RAW_ONLY" ] && command -v gst-launch-1.0 >/dev/null; then
 	check_argus 0 2592 1944 15
 	check_argus 1 1920 1080 30
 	check_argus 2 1296 972 30
-	check_argus 3 640 480 62
+	check_argus 3 640 480 90
 	check_argus 4 1280 720 60
 	# Leave the board usable: the raw path is dead until the driver is
 	# rebound, so a second run of this script would otherwise fail.
