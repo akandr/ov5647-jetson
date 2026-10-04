@@ -11,7 +11,10 @@
 # restarts nvargus-daemon and stops if Argus rejects a line of the file.
 # Then it streams 50 frames, so that AE and AWB settle, and keeps the
 # last one. The override that was installed before is put back at the
-# end.
+# end. ARGUS adds properties to nvarguscamerasrc, for example a fixed
+# exposure for a bright scene in which AE would clip the chart:
+#
+#   ARGUS='exposuretimerange="300000 300000" gainrange="1 1"' tools/isp/capture-isp.sh ...
 set -u
 
 [ "$(id -u)" = 0 ] || { echo "run as root" >&2; exit 2; }
@@ -49,7 +52,8 @@ case $mode in
 *) echo "mode 0 to 4" >&2; exit 2 ;;
 esac
 # The frame rate has to be in the caps, see the README.
-timeout 60 gst-launch-1.0 -q nvarguscamerasrc sensor-id="$sid" sensor-mode="$mode" \
+eval "set -- ${ARGUS:-}"
+timeout 60 gst-launch-1.0 -q nvarguscamerasrc sensor-id="$sid" sensor-mode="$mode" "$@" \
 	num-buffers=50 ! "video/x-raw(memory:NVMM),$size" ! nvjpegenc quality=95 \
 	! multifilesink location="$TMP/f-%03d.jpg" >/dev/null 2>&1
 
