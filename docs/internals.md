@@ -22,9 +22,11 @@ Notes for anyone changing the driver, the overlays or the tests.
 
 - The installer merges the board's overlay into a copy of its DTB with
   `fdtoverlay` and points the `FDT` line of the default `extlinux.conf`
-  entry at the copy. On JetPack 7 the DTB comes from UEFI, so the
-  first run merges onto `/sys/firmware/fdt` and keeps a snapshot for
-  later runs.
+  entry at the copy. On JetPack 7 the DTB comes from UEFI. When the
+  board booted without the overlay, the installer merges onto
+  `/sys/firmware/fdt` and saves that tree as a snapshot. When it booted
+  the merged tree, the installer merges onto the snapshot. It stops if
+  the tree it would merge onto already carries the overlay.
 - Nano and Xavier NX: the stock DTB has the camera graph for the IMX219.
   The overlay disables that sensor, adds the OV5647 and points the
   NVCSI endpoint at it.

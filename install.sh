@@ -181,17 +181,33 @@ fi
 # Re-installs must never merge on top of an already merged tree. Where the
 # stock DTB is a file we can name, take it fresh every time so an L4T upgrade
 # is picked up, and keep a snapshot for the case below. On JetPack 7 the base
-# is the live tree, which after the first install is the merged one, so there
-# the snapshot is the only untouched copy the system still has.
+# is the live tree. It is stock when the board booted without the overlay, as
+# on the first install or after an L4T update rewrote the boot entry. A stock
+# live tree replaces the snapshot. When the board booted the merged tree, the
+# snapshot is the only stock copy the system still has.
+MARK="nvidia,ov5647"
+snapshot=1
 if [ -n "$BASE" ] && [ -e "$BASE" ] && [ "$BASE" != /sys/firmware/fdt ]; then
-	cp "$BASE" "$PRISTINE"
-	printf '%s\n' "$BASE" > "$BASE_SRC"
+	:
+elif [ "$BASE" = /sys/firmware/fdt ] && ! grep -aqF "$MARK" "$BASE"; then
+	echo "the running device tree is stock, saving a new snapshot of it"
 elif [ -e "$PRISTINE" ]; then
-	echo "using the base DTB snapshot from the first install"
+	echo "using the snapshot saved by an earlier install"
 	BASE=$PRISTINE
-else
-	[ -n "$BASE" ] && [ -e "$BASE" ] || { echo "ERROR: base DTB not found" >&2; exit 1; }
+	snapshot=""
+fi
+[ -n "$BASE" ] && [ -e "$BASE" ] || { echo "ERROR: base DTB not found" >&2; exit 1; }
+# A snapshot taken while the merged tree was running carries the overlay
+# already, and merging on it again stacks a second copy. Stop before
+# anything under /boot changes.
+if grep -aqF "$MARK" "$BASE"; then
+	echo "ERROR: $BASE already carries the OV5647 overlay" >&2
+	echo "  run sudo ./install.sh --uninstall, reboot, then install again" >&2
+	exit 1
+fi
+if [ -n "$snapshot" ]; then
 	cp "$BASE" "$PRISTINE"
+	[ "$BASE" = /sys/firmware/fdt ] || printf '%s\n' "$BASE" > "$BASE_SRC"
 fi
 DTBO=$(mktemp --suffix=.dtbo)
 trap 'rm -f "$DTBO"' EXIT
@@ -203,7 +219,20 @@ echo "== install kernel module =="
 make -C driver install
 
 echo "== select the merged device tree =="
-[ -f "$EXT.orig" ] || cp "$EXT" "$EXT.orig"
+# Back up the boot configuration whenever its default entry does not point
+# at the merged tree: on the first install, and after an L4T update rewrote
+# it. An update can move the old FDT line into a backup entry of its own, so
+# only the default entry counts. --uninstall then restores the newest stock
+# configuration.
+named=$(awk -v want="$LABEL" -v ov="$OV" "$entry_awk"'
+	{
+		if ($0 ~ /^[ \t]*LABEL[ \t]/) inblk = pick($0)
+		if (inblk && $0 ~ /^[ \t]*FDT[ \t]/) {
+			p = $0; sub(/^[ \t]*FDT[ \t]+/, "", p); sub(/[ \t]+$/, "", p)
+			if (p == ov) { print 1; exit }
+		}
+	}' "$EXT")
+[ -n "$named" ] || cp "$EXT" "$EXT.orig"
 # Edit the entry that DEFAULT names. extlinux.conf may carry several LABEL
 # blocks, and DEFAULT picks the one that boots.
 # Drop every FDT line in that entry and write exactly one, so a config left

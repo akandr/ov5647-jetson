@@ -161,9 +161,6 @@ R35 also lack `G/S_PARM` and `CREATE_BUFS`.
 
 - Orin: raw capture only. Argus on JetPack 7 needs a per-sensor tuning
   file (NITO), and none exists for this sensor.
-- Orin: a re-install merges the overlay onto the device tree saved at
-  the first install, so device tree changes from an L4T update are not
-  picked up.
 - A prebuilt module from a release loads only on the exact kernel it
   was built for (`modinfo -F vermagic`). Otherwise build it with
   `install.sh`.
