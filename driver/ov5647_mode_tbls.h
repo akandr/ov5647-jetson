@@ -5,8 +5,8 @@
  * Copyright (C) 2026 Artur Andrzejczak <andrzejczak.artur@gmail.com>
  *   - Tegra adaptation: continuous MIPI clock, line length written
  *     explicitly, streaming driven from separate start and stop tables,
- *     wait entry after the soft reset, the 1280x720 table, and no
- *     block reset in the middle of the 640x480 table
+ *     wait entry after the soft reset, the 1280x720 table, and the
+ *     pad output enables left off in the 640x480 table
  * Copyright (C) 2016, Synopsys, Inc.
  *   - register sequences from mainline drivers/media/i2c/ov5647.c
  *     (GPL-2.0), driver by Ramiro Oliveira

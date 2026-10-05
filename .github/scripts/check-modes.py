@@ -144,15 +144,15 @@ def main():
     print("ok  every register table programs the output size frmfmt[] "
           "advertises")
 
-    # Holding the sensor's blocks in reset partway through a table, as
-    # mainline's 640x480 sequence does, leaves the Orin's receiver unable to
-    # lock on that mode. Streaming is started from its own table anyway.
+    # A 640x480 table that set the pad output enables (0x3000-0x3002)
+    # never let the Orin's receiver lock on that mode.
     for name, t in tabele_zapisy(tbls).items():
         for adr, val in t:
             if adr in (0x3000, 0x3001, 0x3002) and val != 0:
-                blad("%s writes 0x%02x to 0x%04x: a block reset inside a mode "
-                     "table stops the Orin capturing that mode" % (name, val, adr))
-    print("ok  no mode table resets the sensor's blocks partway through")
+                blad("%s writes 0x%02x to 0x%04x: a pad output enable set in "
+                     "a mode table stops the Orin capturing that mode"
+                     % (name, val, adr))
+    print("ok  no mode table sets the pad output enables")
 
     # pix_clk_hz is what the receiver's settle time and the framework's
     # exposure maths are computed from. It follows the PLL multiplier as
