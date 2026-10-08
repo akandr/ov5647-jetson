@@ -12,9 +12,10 @@
 # white patch stays below about 85% of full scale; the script prints the
 # 99.9th percentile of each capture to help.
 #
-# After an Argus pipeline the raw path delivers nothing until the sensor
-# driver is rebound (see the README); run with REBIND=1 as root to do
-# that first.
+# Argus leaves the VI control bypass_mode at 1, and the raw path delivers
+# nothing until it is back at 0. The script sets it first. If the capture
+# still comes back empty, run with REBIND=1 as root to rebind the sensor
+# driver as well (see the README).
 set -eu
 
 [ $# -ge 1 ] || { echo "usage: $0 OUTDIR [DEV] [EXPOSURE_US ...]" >&2; exit 2; }
@@ -34,6 +35,7 @@ if [ "${REBIND:-0}" = 1 ]; then
 	sleep 3
 fi
 
+v4l2-ctl -d "$dev" --set-ctrl bypass_mode=0,override_enable=0 || true
 v4l2-ctl -d "$dev" --set-ctrl sensor_mode=0
 v4l2-ctl -d "$dev" --set-fmt-video=width=2592,height=1944,pixelformat=BG10
 for e in $exps; do

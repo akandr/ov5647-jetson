@@ -51,9 +51,15 @@ if [ -n "$held" ]; then
 	exit 2
 fi
 
-# After any Argus pipeline the raw path returns nothing until the sensor
-# driver is rebound: the sensor still streams, but the VI channel stops
-# handing frames over. Rebinding rebuilds the channel, no reboot needed.
+# Argus leaves the VI controls bypass_mode and override_enable at 1, and the
+# raw path returns nothing until both are back at 0. The sensor still
+# streams, but the VI channel does not hand frames over. Where resetting
+# does not help, rebinding the sensor driver rebuilds the channel, no
+# reboot needed.
+reset_vi() {
+	v4l2-ctl -d "$DEV" --set-ctrl bypass_mode=0,override_enable=0 >/dev/null 2>&1
+}
+
 recover_sensor() {
 	local drv=/sys/bus/i2c/drivers/ov5647 dev='' path
 	# the bound device is the one entry named <bus>-<addr>; the rest of
@@ -69,13 +75,14 @@ recover_sensor() {
 	[ -e "$DEV" ]
 }
 
+reset_vi
 v4l2-ctl -d "$DEV" --set-ctrl sensor_mode=$MODE >/dev/null 2>&1
 v4l2-ctl -d "$DEV" --set-fmt-video=width=$W,height=$H,pixelformat=BG10,bytesperline=$BPL >/dev/null 2>&1
 rm -f "$TMP/live.raw"
 timeout 30 v4l2-ctl -d "$DEV" --stream-mmap --stream-count=3 \
 	--stream-to="$TMP/live.raw" >/dev/null 2>&1
 if [ ! -s "$TMP/live.raw" ]; then
-	echo "raw capture returns nothing, rebinding the sensor driver"
+	echo "raw capture returns nothing after resetting the VI controls, rebinding the sensor driver"
 	recover_sensor || { echo "  rebinding failed"; exit 2; }
 	v4l2-ctl -d "$DEV" --set-ctrl sensor_mode=$MODE >/dev/null 2>&1
 	v4l2-ctl -d "$DEV" --set-fmt-video=width=$W,height=$H,pixelformat=BG10,bytesperline=$BPL >/dev/null 2>&1

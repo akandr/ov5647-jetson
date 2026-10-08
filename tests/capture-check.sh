@@ -162,12 +162,18 @@ free_device() {
 
 free_device || exit 2
 
-# An Argus pipeline leaves the raw V4L2 path returning nothing at all: the
+# An Argus pipeline leaves the VI controls bypass_mode and override_enable
+# at 1. With bypass_mode at 1 the raw V4L2 path returns no frames. The
 # sensor keeps streaming (0x0100 still reads 1 and the mode registers are
-# unchanged) but the frames stop reaching userspace, and the kernel logs
-# __vb2_queue_cancel warnings about buffers the VI channel never returned.
-# Rebinding the sensor driver tears the channel down and rebuilds it, which
-# clears the state without a reboot. Same behaviour on R32 and R35.
+# unchanged), and the kernel logs __vb2_queue_cancel warnings about
+# buffers the VI channel never returned. Setting both controls back to 0
+# is enough on R32. Rebinding the sensor driver rebuilds the channel and
+# clears the state too. That remedy was tested on R35, so it stays as the
+# fallback.
+reset_vi() {
+	v4l2-ctl -d "$DEV" --set-ctrl bypass_mode=0,override_enable=0 >/dev/null 2>&1
+}
+
 recover_sensor() {
 	local drv=/sys/bus/i2c/drivers/ov5647 dev='' path
 	# the bound device is the one entry named <bus>-<addr>; the rest of
@@ -190,8 +196,9 @@ raw_alive() {
 	[ -s "$TMP/live.raw" ]
 }
 
+reset_vi
 if ! raw_alive; then
-	echo "raw capture returns nothing, most likely after an earlier Argus run;"
+	echo "raw capture returns nothing after resetting the VI controls,"
 	echo "rebinding the sensor driver"
 	if recover_sensor && raw_alive; then
 		echo "  recovered"
@@ -217,13 +224,13 @@ if [ -z "$RAW_ONLY" ] && command -v gst-launch-1.0 >/dev/null; then
 	check_argus 2 1296 972 30
 	check_argus 3 640 480 90
 	check_argus 4 1280 720 60
-	# Leave the board usable: the raw path is dead until the driver is
-	# rebound, so a second run of this script would otherwise fail.
+	# Leave the board usable. The raw path stays empty until the VI
+	# controls are back at 0.
 	systemctl stop nvargus-daemon 2>/dev/null
-	if recover_sensor; then
-		echo "note: rebound the sensor driver, which the raw path needs after Argus"
+	if reset_vi; then
+		echo "note: VI controls reset to 0 for the raw path"
 	else
-		echo "note: could not rebind the sensor driver; raw capture stays dead until reboot"
+		echo "note: could not reset the VI controls, raw capture may need a rebind of the sensor driver"
 	fi
 fi
 

@@ -20,7 +20,7 @@ DEV=${DEV:-/dev/video0}
 
 command -v gst-launch-1.0 >/dev/null || { echo "need gstreamer1.0-tools"; exit 2; }
 [ -e "$DEV" ] || { echo "no $DEV: is the driver loaded and the overlay applied?"; exit 2; }
-[ "$(id -u)" = 0 ] || echo "note: not root, dmesg and rebinding may be unavailable"
+[ "$(id -u)" = 0 ] || echo "note: not root, dmesg and the control reset may be unavailable"
 
 FRAMES=$((MINUTES * 60 * FPS))
 TMP=$(mktemp -d)
@@ -165,17 +165,11 @@ else
 	echo "PASS nothing new in dmesg"
 fi
 
-# An Argus run leaves the raw path dead until the driver is rebound.
-drv=/sys/bus/i2c/drivers/ov5647
-for path in "$drv"/[0-9]*-[0-9a-f]*; do
-	[ -e "$path" ] || continue
-	dev=${path##*/}
-	if echo "$dev" > "$drv/unbind" 2>/dev/null; then
-		sleep 2; echo "$dev" > "$drv/bind" 2>/dev/null; sleep 3
-		echo "     raw path rebound ($dev)"
-	fi
-	break
-done
+# An Argus run leaves the VI controls bypass_mode and override_enable at 1,
+# and the raw path returns nothing until both are back at 0.
+if v4l2-ctl -d "$DEV" --set-ctrl bypass_mode=0,override_enable=0 >/dev/null 2>&1; then
+	echo "     VI controls reset to 0 for the raw path"
+fi
 
 [ "$fail" = 0 ] && echo "SOAK PASSED" || echo "SOAK FAILED"
 exit $fail

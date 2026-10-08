@@ -114,9 +114,15 @@ method.
 
 - With `--dual` the camera in CAM1 is `/dev/video1`, or `sensor-id=1`
   in Argus.
-- After an Argus pipeline, raw capture returns no frames until the
-  sensor driver is rebound. `ls /sys/bus/i2c/drivers/ov5647` shows the
-  device name, `6-0036` on the Nano, `9-0036` on the Xavier NX:
+- After an Argus pipeline, raw capture returns no frames. On the Nano,
+  Argus leaves the VI control `bypass_mode` at 1. Setting the VI
+  controls back to their defaults restores raw capture:
+
+      v4l2-ctl -d /dev/video0 --set-ctrl=bypass_mode=0,override_enable=0
+
+  On the Xavier NX the tested remedy is to rebind the sensor driver.
+  `ls /sys/bus/i2c/drivers/ov5647` shows the device name, `6-0036` on
+  the Nano, `9-0036` on the Xavier NX:
 
       echo 9-0036 | sudo tee /sys/bus/i2c/drivers/ov5647/unbind
       echo 9-0036 | sudo tee /sys/bus/i2c/drivers/ov5647/bind

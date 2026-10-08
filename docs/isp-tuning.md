@@ -156,8 +156,8 @@ depends on the material. A colour matrix cannot remove it.
 The tools are in `tools/isp/`. The Python tools need numpy and Pillow,
 `fit.py` also SciPy. The shell scripts run on the board.
 
-1. Capture the chart in raw under each source. After an Argus pipeline
-   add `REBIND=1` and run as root.
+1. Capture the chart in raw under each source. If the capture comes
+   back empty after an Argus pipeline, add `REBIND=1` and run as root.
 
        tools/isp/capture-raw.sh chart-B /dev/video0 10000 20000 40000
 

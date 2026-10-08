@@ -92,8 +92,11 @@ frame.
   is lost unless `override_enable=1`.
 - A control write with the current value is dropped. Sweeps must change
   the value each step.
-- After an Argus pipeline the VI keeps its buffers, and raw capture
-  returns nothing until the sensor driver is rebound.
+- On the Nano, Argus leaves the VI controls `bypass_mode` and
+  `override_enable` at 1. With `bypass_mode` at 1 raw capture returns
+  nothing, although the sensor keeps streaming, and `bypass_mode=0`
+  brings it back. The Xavier NX shows the same symptom. There, rebinding
+  the sensor driver is the remedy that was tested.
 - The VI starts every line at a 64-byte boundary. R35 and JetPack 7
   report a 2592-byte stride for the 1296-wide mode. Every second line
   then lands 16 pixels off. Ask for `bytesperline=2624`.
