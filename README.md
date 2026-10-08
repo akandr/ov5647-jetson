@@ -29,7 +29,7 @@ unmaintained or raw-only ([docs/prior-art.md](docs/prior-art.md)).
 
        # raw Bayer (all boards)
        sudo apt install v4l-utils
-       v4l2-ctl -d /dev/video0 --set-ctrl=sensor_mode=1 \
+       v4l2-ctl -d /dev/video0 --set-ctrl=sensor_mode=1,exposure=16000 \
                 --set-fmt-video=width=1920,height=1080,pixelformat=BG10 \
                 --stream-mmap --stream-count=30 --stream-to=frames.raw
 
@@ -78,6 +78,9 @@ original `extlinux.conf` is kept as `extlinux.conf.orig`.
   a raw 1296x972 file has 2624-byte lines on every board.
 - Control units: `exposure` in microseconds, `gain` in sixteenths
   (16 is 1x), `frame_rate` in millionths of a frame per second.
+- `exposure` starts at its minimum after the module loads, so a raw
+  capture without an `exposure` setting is almost black. Argus sets its
+  own exposure.
 - Exposure stops at the frame length, about 33 ms at 30 fps. For longer
   exposures, lower `frame_rate` while streaming. A `frame_rate` set
   before streaming is reset at stream start, unless the VI control

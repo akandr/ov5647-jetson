@@ -92,6 +92,12 @@ frame.
   is lost unless `override_enable=1`.
 - A control write with the current value is dropped. Sweeps must change
   the value each step.
+- After the module loads, `v4l2-ctl --list-ctrls` shows the device tree
+  defaults of `exposure` and `frame_rate` as `default` and the minimum
+  as `value`. The driver sets the default frame rate of the mode at
+  stream start. Exposure keeps the stored value, 131 microseconds on
+  the Nano and the Orin. A raw capture without an `exposure` setting is
+  almost black.
 - On the Nano, Argus leaves the VI controls `bypass_mode` and
   `override_enable` at 1. With `bypass_mode` at 1 raw capture returns
   nothing, although the sensor keeps streaming, and `bypass_mode=0`

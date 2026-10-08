@@ -6,6 +6,10 @@
 #   sudo tests/capture-check.sh            # all modes, raw and ISP
 #   sudo tests/capture-check.sh --raw-only # skip the Argus checks
 #
+# The raw captures run at gain 1x and EXPOSURE microseconds (default
+# 10000). The driver starts at its shortest exposure. Without a setting
+# the frame is almost black in any scene.
+#
 # Each raw mode is checked three ways, because a frame count alone proves
 # very little: v4l2-ctl keeps streaming in the previous format when a
 # requested one is rejected, and a covered lens still delivers full frame
@@ -17,6 +21,7 @@ set -uo pipefail
 
 DEV=${DEV:-/dev/video0}
 FRAMES=${FRAMES:-10}
+EXPOSURE=${EXPOSURE:-10000}
 RAW_ONLY=""
 [ "${1:-}" = "--raw-only" ] && RAW_ONLY=1
 
@@ -43,6 +48,7 @@ check_raw() { # mode width height
 	local mode=$1 w=$2 h=$3 name="mode$1 ${2}x${3}"
 
 	v4l2-ctl -d "$DEV" --set-ctrl sensor_mode="$mode" >/dev/null 2>&1
+	v4l2-ctl -d "$DEV" --set-ctrl gain=16,exposure="$EXPOSURE" >/dev/null 2>&1
 	local err
 	if ! err=$(v4l2-ctl -d "$DEV" --set-fmt-video=width="$w",height="$h",pixelformat=$FMT,bytesperline="$(stride "$w")" 2>&1); then
 		if [ "$(printf '%s' "$err" | grep -ci busy)" -gt 0 ]; then
@@ -89,6 +95,8 @@ check_raw() { # mode width height
 	# The tail of the second line catches a stride the VI cannot honour:
 	# it starts each line at a 64-byte boundary, so with an unaligned
 	# stride every second line begins early and ends in zeroes.
+	# R35 and JetPack 7 scale the samples to 16 bits. Dividing by 64 gives
+	# the 10-bit numbers that R32 delivers, so one threshold fits all.
 	local stats mean std max tail
 	stats=$(python3 - "$TMP/raw" "$size" "$h" "$w" <<-'PY'
 	import sys, numpy as np
@@ -96,7 +104,10 @@ check_raw() { # mode width height
 	d = np.fromfile(path, dtype=np.uint16)
 	frames = len(d) // (size // 2)
 	f = d[(frames - 1) * size // 2:frames * size // 2].reshape(h, -1)[:, :w].astype(np.float32)
-	print("%.1f %.1f %d %d" % (f.mean(), f.std(), f.max(), f[1::2, -16:].max()))
+	tail = f[1::2, -16:].max()
+	if f.max() > 1023:
+	    f /= 64
+	print("%.1f %.1f %d %d" % (f.mean(), f.std(), f.max(), tail))
 	PY
 	)
 	read -r mean std max tail <<<"$stats"
