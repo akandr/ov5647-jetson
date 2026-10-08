@@ -180,8 +180,11 @@ v4l2-ctl -d "$DEV" --set-ctrl frame_rate=30000000 >/dev/null 2>&1
 # same scene reads about 64x higher on R35 and its black level sits near 960
 # (15 on R32). A fixed threshold in counts passes stray light through
 # as signal there and then fails the check it should have skipped.
-too_dark() { # lit black -> true when the difference is negligible
-	python3 -c "import sys; sys.exit(0 if $1 - $2 < 0.05 * $2 else 1)"
+# A signal under half the black level is also too small to judge. At 0.9
+# counts, the exposure ratio of mode 3 on the Orin ranged from 1.7x to 26x
+# over four runs of the same scene.
+too_dark() { # lit black -> true when the difference is small
+	python3 -c "import sys; sys.exit(0 if $1 - $2 < 0.5 * $2 else 1)"
 }
 
 echo "== exposure"
