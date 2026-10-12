@@ -137,6 +137,32 @@ probe() { # "ctrl=val,..." frames
 	mean_of_last "$TMP/p.raw"
 }
 
+echo "== default frame rate"
+# A fresh stream with no frame_rate write runs at the frame length the
+# driver programs at stream start, which has to be the default the device
+# tree declares. The stored control is not applied here: override_enable
+# is 0. Two old versions of this driver passed every other check while
+# running this stream at 32.6 fps (the shortest frame of the mode) and at
+# 23.4 fps (no frame length written at all), against a declared 30.
+rm -f "$TMP/d.txt"; : > "$TMP/d.txt"
+stdbuf -o0 timeout 60 v4l2-ctl -d "$DEV" --stream-mmap --stream-count=600 \
+	> "$TMP/d.txt" 2>&1 &
+dpid=$!
+sleep 3
+a=$(tr -cd '<' < "$TMP/d.txt" | wc -c)
+sleep 5
+b=$(tr -cd '<' < "$TMP/d.txt" | wc -c)
+kill $dpid 2>/dev/null; wait $dpid 2>/dev/null
+got=$(python3 -c "print('%.2f' % (($b - $a) / 5.0))")
+# 5 %: the window resolves 0.2 fps and a correct driver measures within
+# 0.2 fps of the declared rate.
+if python3 -c "import sys; sys.exit(0 if abs($got - ${FPS:-30}) <= 0.05 * ${FPS:-30} else 1)"; then
+	echo "PASS default frame rate: ${FPS:-30} fps declared, measured $got"
+else
+	echo "FAIL default frame rate: ${FPS:-30} fps declared, measured $got"
+	fail=1
+fi
+
 echo "== frame rate"
 # One stream throughout: v4l2-ctl prints '<' per frame, so counting those
 # characters over a fixed window gives the rate the sensor really delivers.

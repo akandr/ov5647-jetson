@@ -152,7 +152,8 @@ On the board, with a camera:
   Argus, and checks geometry, size and content. Use `--raw-only` on the
   Orin.
 - `sudo tests/control-check.sh` checks that frame rate, exposure, gain
-  and the test pattern reach the sensor. Exposure and gain need light.
+  and the test pattern reach the sensor, and that a stream starts at the
+  frame rate the device tree declares. Exposure and gain need light.
 - `sudo tests/soak.sh [minutes]` runs one long ISP capture and watches
   memory, temperature and the frame rate.
 
