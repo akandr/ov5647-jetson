@@ -36,10 +36,12 @@ Notes for anyone changing the driver, the overlays or the tests.
 - `--dual` installs the board's `*-dual-overlay.dts`, with a sensor node
   for each connector. A mode change has to be made in every sensor node
   of every overlay in `dt/`.
-- `discontinuous_clk` must be `"no"` on the Nano and `"yes"` on the
-  Orin. The Xavier NX works with either. The tables set a continuous
-  clock (`0x4800 = 0x04`). With the gated clock values in mainline's
-  tables (`0x24`, `0x34`) the Nano rejects every frame.
+- `discontinuous_clk` must be `"no"` on the Nano: with `"yes"` the Nano
+  captures nothing in any mode. The Xavier NX and the Orin capture with
+  either value, and the overlays keep `"yes"` on the Orin as in NVIDIA's
+  IMX219 overlay. The tables set a continuous clock (`0x4800 = 0x04`).
+  The gated values of mainline's tables (`0x24`, `0x34`) capture on the
+  Nano as well, so the device tree value is what matters there.
 - `horizontal-mirror` and `vertical-flip` in the sensor node flip the
   image. The driver moves the readout window so that the Bayer order
   stays BGGR. A horizontal flip moves the left edge. A vertical flip
