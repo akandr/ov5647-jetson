@@ -6,8 +6,9 @@ A Linux driver for the Raspberry Pi Camera Module v1 (OmniVision OV5647)
 on NVIDIA Jetson boards. It gives raw Bayer capture through V4L2 on all
 supported boards, and the hardware ISP (debayer, auto exposure, auto
 white balance) through Argus on the Nano and the Xavier NX. JetPack has
-no driver for this sensor, and the earlier projects are commercial,
-unmaintained or raw-only ([docs/prior-art.md](docs/prior-art.md)).
+no driver for this sensor. The earlier projects are commercial,
+unmaintained or raw-only, and a parallel one from October 2026 covers
+the Nano in raw 640x480 only ([docs/prior-art.md](docs/prior-art.md)).
 
 ## Quick start
 

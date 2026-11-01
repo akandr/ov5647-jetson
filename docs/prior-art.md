@@ -1,7 +1,8 @@
 # Prior art: OV5647 on Jetson
 
 Surveyed on 2026-07-29. The mainline row was rechecked on 2026-09-15
-and tested on hardware on 2026-09-24.
+and tested on hardware on 2026-09-24. The last row was added on
+2026-11-01.
 
 | Project | State | Notes |
 |---|---|---|
@@ -11,6 +12,7 @@ and tested on hardware on 2026-09-24.
 | [GiraffAI blog series](https://www.giraffai.com/nvidia-jetson-nano/developing-ov5647-sensor-linux-device-driver-for-jetson-nano-part1) | partial, educational | Raw V4L2 capture only (640x480 RG10 stills), no ISP integration. The series is unfinished. |
 | Arducam OV5647 for Jetson | discontinued | Required the proprietary Jetvariety adapter. No native CSI driver. |
 | Mainline kernel | T210 only, raw Bayer | `staging/media/tegra-video` covers Tegra20/30 and T210. T194 and T234 appear in neither its Makefile nor its Kconfig. Mainline has `drivers/media/i2c/ov5647.c`. The NVIDIA ISP userspace is not part of mainline, so the result is raw Bayer only. See below. |
+| [BioMedCoding/jetson-nano-vision-lab](https://github.com/BioMedCoding/jetson-nano-vision-lab) | parallel work, published 2026-10-31 | Nano only, JetPack 4.6.1. The kernel-4.9 `drivers/media/i2c/ov5647.c` (the 2016 mainline driver) patched into `camera_common` and built in-tree with the whole L4T kernel. Raw V4L2 640x480 at 62.5 fps, no ISP. Gated MIPI clock (`0x4800 = 0x34`) with `discontinuous_clk = "yes"`, sensor auto exposure on. Its notes date the work to July 2026; no code is shared with this driver beyond kernel boilerplate. The CSI status dump in [internals.md](internals.md) follows its write-up. |
 
 ## Mainline on Jetson
 

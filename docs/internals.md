@@ -121,6 +121,22 @@ frame.
 - `v4l2-ctl --get-ctrl otp_data` returns the module's one-time
   programmable identity. Reading it needs the sensor's internal clock,
   so the driver streams briefly at probe.
+- On R32 the VI's timeout recovery dumps the CSI receiver's status
+  registers, but with `dev_dbg`. Switch them on without a rebuild:
+
+      echo 'file csi2_fops.c +p' > /sys/kernel/debug/dynamic_debug/control
+      echo 'file vi2_fops.c +p' > /sys/kernel/debug/dynamic_debug/control
+
+  Every stream start then logs the settle times (`csi clock settle
+  time: 13, cil settle time: 10` on the Nano, R32.7.6), and a
+  `frame start syncpt timeout` prints `TEGRA_CSI_PIXEL_PARSER_STATUS`,
+  `TEGRA_CSI_CIL_STATUS` and `TEGRA_CSI_CILX_STATUS`. Reading them, as
+  the jetson-nano-vision-lab write-up does ([prior-art.md](prior-art.md)):
+  all zeros means nothing reached the receiver (ribbon, port, sensor
+  not streaming); CIL control errors with a zero parser status mean a
+  signal whose LP to HS handshake fails (clock mode, settle time,
+  lanes); SOT or CRC errors mean a working link with corrupted data
+  (settle times). `-p` in place of `+p` switches the lines off.
 - An error on every frame in dmesg (on the Nano
   `tegra_channel_error_status`) points to the link clocking. A capture
   with no frames at all points to mode timing, lanes, the ribbon or a
